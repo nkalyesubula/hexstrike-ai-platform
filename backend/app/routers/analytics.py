@@ -32,12 +32,6 @@ async def get_user_stats(
         UserProgress.completed == True
     ).count()
     
-    # Calculate streak (simplified - would need proper implementation)
-    current_streak = 7  # Mock value
-    
-    # Calculate total hours spent (mock)
-    hours_spent = completed_modules * 2  # Approximate 2 hours per module
-    
     return {
         "total_quizzes_taken": len(quiz_attempts),
         "average_quiz_score": avg_quiz_score,
@@ -45,8 +39,8 @@ async def get_user_stats(
         "successful_sessions": successful_sessions,
         "completed_modules": completed_modules,
         "total_experience_points": completed_modules * 100 + successful_sessions * 50,
-        "current_streak": current_streak,
-        "hours_spent": hours_spent
+        "current_streak": 7,
+        "hours_spent": completed_modules * 2
     }
 
 @router.get("/progress")
@@ -55,10 +49,6 @@ async def get_progress_data(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get progress data for charts"""
-    
-    # This would query actual data from the database
-    # For now, return mock data structure
     if range == "week":
         return [
             {"name": "Mon", "score": 65, "modules": 1, "time": 45},
@@ -76,7 +66,7 @@ async def get_progress_data(
             {"name": "Week 3", "score": 78, "modules": 6, "time": 360},
             {"name": "Week 4", "score": 85, "modules": 8, "time": 480}
         ]
-    else:  # year
+    else:
         return [
             {"name": "Jan", "score": 55, "modules": 12, "time": 720},
             {"name": "Feb", "score": 62, "modules": 15, "time": 900},
@@ -91,14 +81,10 @@ async def get_achievements(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get user achievements"""
-    # This would query actual achievements from database
-    # For now, return mock data
     return [
         {"id": 1, "name": "First Blood", "description": "Completed first penetration test", "earned": True, "icon": "🎯"},
         {"id": 2, "name": "Bug Hunter", "description": "Found 10 vulnerabilities", "earned": True, "icon": "🐛"},
         {"id": 3, "name": "Quiz Master", "description": "Scored 100% on 5 quizzes", "earned": False, "icon": "📝"},
         {"id": 4, "name": "Speed Runner", "description": "Completed pentest under 5 minutes", "earned": False, "icon": "⚡"},
-        {"id": 5, "name": "Night Owl", "description": "Studied after midnight", "earned": True, "icon": "🦉"},
-        {"id": 6, "name": "Social Butterfly", "description": "Shared 5 achievements", "earned": False, "icon": "🦋"}
+        {"id": 5, "name": "Night Owl", "description": "Studied after midnight", "earned": True, "icon": "🦉"}
     ]

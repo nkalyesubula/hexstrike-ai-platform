@@ -1,17 +1,30 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
-import { Shield, LayoutDashboard, FlaskConical, BookOpen, User, LogOut, Menu, X } from 'lucide-react'
+import { Shield, LayoutDashboard, FlaskConical, BookOpen, User, LogOut, Menu, X, Home } from 'lucide-react'
 
 function Navbar() {
   const { isAuthenticated, logout, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024)
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   const handleLogout = () => {
     logout()
     navigate('/')
+  }
+
+  const isActive = (path) => {
+    if (path === '/' && location.pathname === '/') return true
+    if (path !== '/' && location.pathname.startsWith(path)) return true
+    return false
   }
 
   const navLinks = [
@@ -21,117 +34,262 @@ function Navbar() {
     { path: '/profile', name: 'Profile', icon: User },
   ]
 
-  return (
-    <nav className="bg-black/50 backdrop-blur-lg border-b border-white/10 sticky top-0 z-50">
-      <div className="container mx-auto px-6 py-4">
-        <div className="flex items-center justify-between">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Shield className="w-6 h-6 text-white" />
+  const getLinkStyle = (path) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    borderRadius: '8px',
+    textDecoration: 'none',
+    transition: 'all 0.2s',
+    background: isActive(path) ? '#6c63ff' : 'transparent',
+    color: isActive(path) ? 'white' : '#e0e0e0',
+    fontWeight: isActive(path) ? '600' : '400'
+  })
+
+  // If not authenticated, only show minimal navbar with logo and auth buttons
+  if (!isAuthenticated) {
+    return (
+      <nav style={{
+        background: '#1a1a2e',
+        padding: '12px 24px',
+        borderBottom: '1px solid #333',
+        position: 'sticky',
+        top: 0,
+        zIndex: 1000
+      }}>
+        <div style={{
+          maxWidth: '1400px',
+          margin: '0 auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              background: 'linear-gradient(135deg, #6c63ff, #a855f7)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Shield size={20} color="white" />
             </div>
-            <span className="text-2xl font-bold gradient-text">HexStrike AI</span>
+            <span style={{ fontSize: '20px', fontWeight: 'bold', color: 'white' }}>
+              HexStrike<span style={{ color: '#6c63ff' }}>AI</span>
+            </span>
           </Link>
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-6">
-            {isAuthenticated ? (
-              <>
-                {navLinks.map((link) => {
-                  const Icon = link.icon
-                  const isActive = location.pathname === link.path
-                  return (
-                    <Link
-                      key={link.path}
-                      to={link.path}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                        isActive
-                          ? 'bg-purple-600 text-white'
-                          : 'text-gray-300 hover:text-white hover:bg-white/10'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      {link.name}
-                    </Link>
-                  )
-                })}
-                <div className="flex items-center gap-4 ml-4 pl-4 border-l border-white/20">
-                  <span className="text-sm text-gray-300">
-                    Welcome, <span className="text-purple-400">{user?.username}</span>
-                  </span>
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 rounded-lg text-red-400 transition-colors"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Logout
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="flex gap-4">
-                <Link to="/login" className="px-6 py-2 text-gray-300 hover:text-white transition-colors">
-                  Login
-                </Link>
-                <Link to="/register" className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white hover:scale-105 transition-transform">
-                  Sign Up
-                </Link>
-              </div>
-            )}
+          
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <Link to="/login" style={{
+              padding: '8px 20px',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              color: 'white',
+              transition: 'all 0.2s'
+            }}>
+              Login
+            </Link>
+            <Link to="/register" style={{
+              padding: '8px 20px',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              background: '#6c63ff',
+              color: 'white',
+              transition: 'all 0.2s'
+            }}>
+              Sign Up
+            </Link>
           </div>
+        </div>
+      </nav>
+    )
+  }
 
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 text-white"
-          >
-            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+  // Authenticated user navbar
+  return (
+    <nav style={{
+      background: '#1a1a2e',
+      padding: '12px 24px',
+      borderBottom: '1px solid #333',
+      position: 'sticky',
+      top: 0,
+      zIndex: 1000
+    }}>
+      <div style={{
+        maxWidth: '1400px',
+        margin: '0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap'
+      }}>
+        {/* Logo */}
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            background: 'linear-gradient(135deg, #6c63ff, #a855f7)',
+            borderRadius: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Shield size={20} color="white" />
+          </div>
+          <span style={{ fontSize: '20px', fontWeight: 'bold', color: 'white' }}>
+            HexStrike<span style={{ color: '#6c63ff' }}>AI</span>
+          </span>
+        </Link>
+
+        {/* Desktop Navigation */}
+        <div style={{ 
+          display: windowWidth < 768 ? 'none' : 'flex', 
+          alignItems: 'center', 
+          gap: '8px' 
+        }}>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <Link to="/" style={getLinkStyle('/')}>
+              <Home size={18} />
+              <span>Home</span>
+            </Link>
+            {navLinks.map((link) => {
+              const Icon = link.icon
+              const active = isActive(link.path)
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    textDecoration: 'none',
+                    transition: 'all 0.2s',
+                    background: active ? '#6c63ff' : 'transparent',
+                    color: active ? 'white' : '#e0e0e0',
+                    fontWeight: active ? '600' : '400'
+                  }}
+                >
+                  <Icon size={18} />
+                  <span>{link.name}</span>
+                </Link>
+              )
+            })}
+          </div>
+          
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px', 
+            marginLeft: '16px',
+            paddingLeft: '16px',
+            borderLeft: '1px solid #333'
+          }}>
+            <span style={{ fontSize: '14px', color: '#888' }}>
+              👋 <span style={{ color: '#6c63ff' }}>{user?.username}</span>
+            </span>
+            <button
+              onClick={handleLogout}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#ef444420',
+                color: '#ef4444',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                transition: 'all 0.2s'
+              }}
+            >
+              <LogOut size={14} />
+              Logout
+            </button>
+          </div>
         </div>
 
-        {/* Mobile Navigation */}
-        {isMobileMenuOpen && (
-          <div className="md:hidden mt-4 pt-4 border-t border-white/20">
-            {isAuthenticated ? (
-              <div className="space-y-2">
-                {navLinks.map((link) => {
-                  const Icon = link.icon
-                  return (
-                    <Link
-                      key={link.path}
-                      to={link.path}
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
-                    >
-                      <Icon className="w-5 h-5" />
-                      {link.name}
-                    </Link>
-                  )
-                })}
-                <button
-                  onClick={() => {
-                    handleLogout()
-                    setIsMobileMenuOpen(false)
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-600/20 transition-colors"
-                >
-                  <LogOut className="w-5 h-5" />
-                  Logout
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg">
-                  Login
-                </Link>
-                <Link to="/register" onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg text-white text-center">
-                  Sign Up
-                </Link>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Mobile Menu Button */}
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          style={{
+            display: windowWidth >= 768 ? 'none' : 'block',
+            background: 'transparent',
+            border: 'none',
+            color: 'white',
+            cursor: 'pointer'
+          }}
+        >
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
       </div>
+
+      {/* Mobile Navigation */}
+      {isMobileMenuOpen && windowWidth < 768 && (
+        <div style={{
+          marginTop: '16px',
+          paddingTop: '16px',
+          borderTop: '1px solid #333'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <Link to="/" onClick={() => setIsMobileMenuOpen(false)} style={getLinkStyle('/')}>
+              <Home size={18} />
+              Home
+            </Link>
+            {navLinks.map((link) => {
+              const Icon = link.icon
+              const active = isActive(link.path)
+              return (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    textDecoration: 'none',
+                    background: active ? '#6c63ff' : 'transparent',
+                    color: active ? 'white' : '#e0e0e0'
+                  }}
+                >
+                  <Icon size={18} />
+                  {link.name}
+                </Link>
+              )
+            })}
+            <button
+              onClick={() => {
+                handleLogout()
+                setIsMobileMenuOpen(false)
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#ef444420',
+                color: '#ef4444',
+                border: 'none',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                width: '100%'
+              }}
+            >
+              <LogOut size={18} />
+              Logout
+            </button>
+          </div>
+        </div>
+      )}
     </nav>
   )
 }

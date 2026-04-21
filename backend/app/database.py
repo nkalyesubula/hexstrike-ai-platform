@@ -1,8 +1,12 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, JSON, Text, Boolean, Float
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, JSON, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 from app.config import settings
+import warnings
+
+# Suppress SQLAlchemy's typing warnings for Python 3.13
+warnings.filterwarnings("ignore", category=UserWarning, module="sqlalchemy")
 
 engine = create_engine(
     settings.DATABASE_URL,
@@ -94,6 +98,5 @@ def get_db():
     finally:
         db.close()
 
-# Create tables
 def init_db():
     Base.metadata.create_all(bind=engine)

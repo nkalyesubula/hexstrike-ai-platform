@@ -11,3 +11,9 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your OpenAI API key
 python run.py
+
+### Backend Setup
+```bash
+cd frontend
+npm install
+npm run dev

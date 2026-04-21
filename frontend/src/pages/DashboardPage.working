@@ -1,0 +1,48 @@
+import React, { useState, useEffect } from 'react'
+
+function DashboardPage() {
+  const [stats, setStats] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/analytics/stats')
+      .then(res => res.json())
+      .then(data => setStats(data))
+      .catch(err => console.error('Error:', err))
+  }, [])
+
+  return (
+    <div style={{
+      padding: '40px',
+      background: '#1a1a2e',
+      minHeight: '100vh',
+      color: 'white'
+    }}>
+      <h1 style={{ fontSize: '32px', marginBottom: '20px' }}>Dashboard</h1>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+        gap: '20px',
+        marginTop: '20px'
+      }}>
+        <div style={{ background: '#16213e', padding: '20px', borderRadius: '10px' }}>
+          <h3>Total XP</h3>
+          <p style={{ fontSize: '32px', color: '#6c63ff' }}>{stats?.total_experience_points || 0}</p>
+        </div>
+        <div style={{ background: '#16213e', padding: '20px', borderRadius: '10px' }}>
+          <h3>Modules Completed</h3>
+          <p style={{ fontSize: '32px', color: '#6c63ff' }}>{stats?.completed_modules || 0}</p>
+        </div>
+        <div style={{ background: '#16213e', padding: '20px', borderRadius: '10px' }}>
+          <h3>Pentests</h3>
+          <p style={{ fontSize: '32px', color: '#6c63ff' }}>{stats?.successful_sessions || 0}</p>
+        </div>
+        <div style={{ background: '#16213e', padding: '20px', borderRadius: '10px' }}>
+          <h3>Avg Quiz Score</h3>
+          <p style={{ fontSize: '32px', color: '#6c63ff' }}>{stats?.average_quiz_score?.toFixed(0) || 0}%</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default DashboardPage

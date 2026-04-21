@@ -1,0 +1,61 @@
+import React from 'react'
+
+function App() {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <div style={{
+        background: 'white',
+        padding: '40px',
+        borderRadius: '20px',
+        textAlign: 'center',
+        maxWidth: '500px',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+      }}>
+        <h1 style={{ color: '#667eea', fontSize: '48px', marginBottom: '10px' }}>
+          🚀 HexStrike AI
+        </h1>
+        <p style={{ color: '#666', fontSize: '18px', marginBottom: '20px' }}>
+          Frontend is working!
+        </p>
+        <div style={{
+          background: '#e8f5e9',
+          padding: '15px',
+          borderRadius: '10px',
+          marginTop: '20px'
+        }}>
+          <p>✅ Backend: <a href="http://localhost:8000/health" target="_blank">http://localhost:8000</a></p>
+          <p>✅ Frontend: http://localhost:5173</p>
+        </div>
+        <button 
+          onClick={() => {
+            fetch('http://localhost:8000/health')
+              .then(r => r.json())
+              .then(data => alert('Backend is healthy! ' + JSON.stringify(data)))
+              .catch(err => alert('Backend error: ' + err.message))
+          }}
+          style={{
+            background: '#667eea',
+            color: 'white',
+            border: 'none',
+            padding: '10px 20px',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            marginTop: '20px',
+            fontSize: '16px'
+          }}
+        >
+          Test Backend Connection
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default App

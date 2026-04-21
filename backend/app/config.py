@@ -8,9 +8,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "HexStrike AI"
     
     # Security
-    SECRET_KEY: str = "your-super-secret-key-change-in-production"
+    SECRET_KEY: str = "default-secret-key-change-me"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
     
     # Database
     DATABASE_URL: str = "sqlite:///./hexstrike.db"
@@ -23,13 +23,11 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o"
     
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
-    
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379"
+    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
     
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = True
 
 settings = Settings()
