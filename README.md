@@ -2,7 +2,7 @@
 
 ### 🚀 HexStrike AI - Cybersecurity Learning Platform
 
-<div align="center">
+<div align="left">
   
 **An AI-Powered Educational Platform for Learning Penetration Testing on Kali Linux**
 
