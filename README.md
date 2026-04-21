@@ -25,7 +25,7 @@
 11. [API Endpoints](#api-endpoints)
 12. [Credits](#credits)
 
-## What is HexStrike AI?
+## What is HexStrike AI Education Platform?
 
 HexStrike AI is a **complete cybersecurity learning platform** that combines:
 - 🤖 **AI-powered explanations** using OpenAI GPT-4o
@@ -47,17 +47,6 @@ HexStrike AI is a **complete cybersecurity learning platform** that combines:
 | Storage | 20GB | 30GB |
 | OS | Kali Linux 2024.1+ | Kali Linux Rolling |
 
-### Required Software
-
-| Software | Version | Installation Command |
-|----------|---------|---------------------|
-| Python | 3.11+ | `sudo apt install python3.11` |
-| Node.js | 18+ | `curl -fsSL https://deb.nodesource.com/setup_20.x \| sudo -E bash - && sudo apt install -y nodejs` |
-| npm | 9+ | Included with Node.js |
-| Git | Latest | `sudo apt install git` |
-| VirtualBox | 6.x+ | `sudo apt install virtualbox` |
-| netdiscover | Latest | `sudo apt install netdiscover` |
-
 ## Complete Installation Guide
 
 ### Step 1: Install Prerequisites on Kali Linux
@@ -66,7 +55,7 @@ HexStrike AI is a **complete cybersecurity learning platform** that combines:
 # Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install Python 3.11
+# Install Python 3.11+
 # The correct statement is:
 sudo apt install -y python3 python3-venv python3-dev
 
@@ -77,7 +66,7 @@ sudo apt install -y nodejs
 # Install build tools
 sudo apt install -y build-essential libssl-dev netdiscover
 # Verify installations
-python3.11 --version   # Should show 3.11.x
+python3 --version   # Should show 3.11+
 node --version         # Should show v20.x
 npm --version          # Should show 9.x or higher
 
