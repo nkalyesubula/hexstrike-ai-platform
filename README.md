@@ -1,6 +1,6 @@
 # HexStrike AI Educational Platform
 
-# 🚀 HexStrike AI - Cybersecurity Learning Platform
+### 🚀 HexStrike AI - Cybersecurity Learning Platform
 
 <div align="center">
   
@@ -10,7 +10,7 @@
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [What is HexStrike AI?](#what-is-hexstrike-ai)
 2. [System Requirements](#system-requirements)
