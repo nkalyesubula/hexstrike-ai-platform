@@ -47,7 +47,7 @@ HexStrike AI is a **complete cybersecurity learning platform** that combines:
 
 ## Complete Installation Guide
 
-### Step 1: Install Prerequisites on Kali Linux
+### Install Prerequisites on Kali Linux
 
 ```bash
 # Update system
@@ -66,9 +66,9 @@ sudo apt install -y build-essential libssl-dev netdiscover
 # Verify installations
 python3 --version   # Should show 3.11+
 node --version         # Should show v20.x
-npm --version          # Should show 9.x or higher
+npm --version          # Should show 9.x or higher ```
 
-### Step 2: Clone the Repository
+### Clone the Repository
 # Create workspace
 mkdir -p ~/hexstrike-workspace
 cd ~/hexstrike-workspace
