@@ -4,3 +4,6 @@
 .env.local
 .env.*.local
 *.env
+.env
+.env.*
+*.env
