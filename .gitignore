@@ -20,3 +20,8 @@ build/
 *.log
 *.tmp
 .DS_Store
+
+#vscode
+.vscode/
+.eslintrc
+.prettierrc
