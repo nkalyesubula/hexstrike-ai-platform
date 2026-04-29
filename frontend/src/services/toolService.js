@@ -1,12 +1,8 @@
 import { api } from './api'
 
 export const toolService = {
-  executeTool: async (toolName, target, parameters = {}) => {
-    const response = await api.post(`/api/tools/execute/${toolName}`, {
-      target,
-      tool_name: toolName,
-      parameters
-    })
+  getAvailableTools: async () => {
+    const response = await api.get('/api/tools/available')
     return response.data
   },
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Terminal, Play, Loader, History, Target, Search } from 'lucide-react'
+import { toolService } from '../services/toolService'
 
 function LabPage() {
   const [target, setTarget] = useState('')
@@ -17,23 +18,6 @@ function LabPage() {
   
   const announcedToolsRef = useRef(new Set())
 
-  const fetchWithAuth = async (endpoint, options = {}) => {
-    const token = localStorage.getItem('access_token')
-    const response = await fetch(endpoint, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        ...options.headers
-      }
-    })
-    if (response.status === 401) {
-      window.location.href = '/login'
-      throw new Error('Unauthorized')
-    }
-    return response
-  }
-
   useEffect(() => {
     fetchTools()
     fetchSessions()
@@ -43,8 +27,7 @@ function LabPage() {
 
   const fetchTools = async () => {
     try {
-      const response = await fetchWithAuth('/api/tools/available')
-      const data = await response.json()
+      const data = await toolService.getAvailableTools()
       setAvailableTools(data.tools || {})
       setToolCategories(data.categories || [])
     } catch (err) {
@@ -56,8 +39,7 @@ function LabPage() {
 
   const fetchSessions = async () => {
     try {
-      const response = await fetchWithAuth('/api/tools/history?limit=10')
-      const data = await response.json()
+      const data = await toolService.getHistory(10)
       setSessions(data || [])
     } catch (err) {
       console.error('Error fetching sessions:', err)
@@ -69,8 +51,7 @@ function LabPage() {
     
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetchWithAuth(`/api/tools/session/${currentSessionId}`)
-        const data = await response.json()
+        const data = await toolService.getSessionStatus(currentSessionId)
         
         if (data.progress) {
           setCurrentProgress(data.progress)
@@ -148,11 +129,7 @@ function LabPage() {
     addOutput(`📋 Selected tools: ${selectedTools.join(', ')}`, 'info')
     
     try {
-      const response = await fetchWithAuth('/api/tools/batch', {
-        method: 'POST',
-        body: JSON.stringify({ target, tools: selectedTools, auto_mode: true })
-      })
-      const data = await response.json()
+      const data = await toolService.executeBatch(target, selectedTools)
       setCurrentSessionId(data.session_id)
       addOutput(`✅ Session created: ID ${data.session_id}`, 'success')
     } catch (error) {

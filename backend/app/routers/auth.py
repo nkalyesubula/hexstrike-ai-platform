@@ -32,6 +32,11 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
 
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -163,6 +168,31 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     print(f"[DEBUG] Returning user info for: {current_user.username}")
+    return current_user
+
+@router.put("/me", response_model=UserResponse)
+async def update_current_user_info(
+    user_data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if user_data.email and user_data.email != current_user.email:
+        existing_email = db.query(User).filter(User.email == user_data.email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="Email is already in use")
+        current_user.email = user_data.email
+
+    if user_data.username and user_data.username != current_user.username:
+        existing_username = db.query(User).filter(User.username == user_data.username).first()
+        if existing_username:
+            raise HTTPException(status_code=400, detail="Username is already in use")
+        current_user.username = user_data.username
+
+    if user_data.full_name is not None:
+        current_user.full_name = user_data.full_name
+
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 @router.get("/debug-token")

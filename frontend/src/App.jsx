@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Navbar from './components/Common/Navbar'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import { api } from './services/api'
 
 // Lazy load components
 const Dashboard = lazy(() => import('./pages/DashboardPage'))
@@ -17,9 +18,8 @@ function HomePage() {
   const [backendStatus, setBackendStatus] = React.useState('checking...')
 
   React.useEffect(() => {
-    fetch('/api/health')
-      .then(res => res.json())
-      .then(data => setBackendStatus('✅ Connected: ' + data.status))
+    api.get('/health')
+      .then(response => setBackendStatus('✅ Connected: ' + response.data.status))
       .catch(err => setBackendStatus('❌ Backend not reachable'))
   }, [])
 

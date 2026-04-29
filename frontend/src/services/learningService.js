@@ -1,41 +1,23 @@
 import { api } from './api'
 
 export const learningService = {
-  updateProgress: async (moduleId, completed, score, metadata = {}) => {
-    const response = await api.post('/api/learning/progress', {
-      module_id: moduleId,
-      completed,
-      score,
-      metadata
-    })
+  getModules: async () => {
+    const response = await api.get('/api/learning/modules')
     return response.data
   },
 
-  getProgress: async () => {
-    const response = await api.get('/api/learning/progress')
+  getModule: async (moduleId) => {
+    const response = await api.get(`/api/learning/modules/${moduleId}`)
     return response.data
   },
 
-  generateQuiz: async (topic, difficulty = 'intermediate') => {
-    const response = await api.get(`/api/learning/quiz/generate?topic=${topic}&difficulty=${difficulty}`)
+  submitModuleQuiz: async (moduleId, answers) => {
+    const response = await api.post(`/api/learning/modules/${moduleId}/quiz/submit`, answers)
     return response.data
   },
 
-  submitQuiz: async (submission) => {
-    const response = await api.post('/api/learning/quiz/submit', submission)
-    return response.data
-  },
-
-  getFlashcards: async (topic, count = 20) => {
-    const response = await api.get(`/api/learning/flashcards/${topic}?count=${count}`)
-    return response.data
-  },
-
-  reviewFlashcard: async (cardId, difficultyRating) => {
-    const response = await api.post('/api/learning/flashcards/review', {
-      card_id: cardId,
-      difficulty_rating: difficultyRating
-    })
+  getQuizHistory: async (moduleId) => {
+    const response = await api.get(`/api/learning/modules/${moduleId}/quiz/history`)
     return response.data
   }
 }

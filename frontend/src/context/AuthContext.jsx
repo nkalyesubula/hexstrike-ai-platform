@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react'
+import { authService } from '../services/authService'
 
 // Create the context
 const AuthContext = createContext(null)
@@ -28,20 +29,12 @@ export function AuthProvider({ children }) {
 
   const fetchUser = async () => {
     try {
-      const response = await fetch('/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      if (response.ok) {
-        const userData = await response.json()
-        setUser(userData)
-        localStorage.setItem('user', JSON.stringify(userData))
-      } else {
-        logout()
-      }
+      const userData = await authService.getCurrentUser()
+      setUser(userData)
+      localStorage.setItem('user', JSON.stringify(userData))
     } catch (error) {
       console.error('Error fetching user:', error)
+      logout()
     } finally {
       setLoading(false)
     }
@@ -49,22 +42,12 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     try {
-      const response = await fetch('/api/auth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ username, password })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        localStorage.setItem('access_token', data.access_token)
-        setToken(data.access_token)
-        await fetchUser()
-        return true
-      }
-      return false
+      const data = await authService.login(username, password)
+      setToken(data.access_token)
+      const userData = await authService.getCurrentUser()
+      setUser(userData)
+      localStorage.setItem('user', JSON.stringify(userData))
+      return true
     } catch (error) {
       console.error('Login error:', error)
       return false

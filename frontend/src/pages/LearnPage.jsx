@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { BookOpen, Search, CheckCircle, AlertCircle, Award, Clock, Target, Shield, Zap, Code, Database, Server, Wifi, Key, Globe, Lock, Terminal, FileText, History } from 'lucide-react'
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar'
 import 'react-circular-progressbar/dist/styles.css'
+import { learningService } from '../services/learningService'
 
 function LearnPage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -20,23 +21,6 @@ function LearnPage() {
   const [quizHistory, setQuizHistory] = useState([])
   const [notes, setNotes] = useState('')
   const [quizError, setQuizError] = useState('')
-
-  const fetchWithAuth = async (endpoint, options = {}) => {
-    const token = localStorage.getItem('access_token')
-    const response = await fetch(endpoint, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        ...options.headers
-      }
-    })
-    if (response.status === 401) {
-      window.location.href = '/login'
-      throw new Error('Unauthorized')
-    }
-    return response
-  }
 
   useEffect(() => {
     fetchModules()
@@ -61,8 +45,7 @@ function LearnPage() {
 
   const fetchModules = async () => {
     try {
-      const response = await fetchWithAuth('/api/learning/modules')
-      const data = await response.json()
+      const data = await learningService.getModules()
       setModules(data)
       setFilteredModules(data)
       if (!selectedModule && data.length > 0) {
@@ -78,8 +61,7 @@ function LearnPage() {
   const fetchModuleContent = async (moduleId) => {
     setLoading(true)
     try {
-      const response = await fetchWithAuth(`/api/learning/modules/${moduleId}`)
-      const data = await response.json()
+      const data = await learningService.getModule(moduleId)
       setModuleContent(data)
     } catch (err) {
       console.error('Error fetching module content:', err)
@@ -90,8 +72,7 @@ function LearnPage() {
 
   const fetchQuizHistory = async (moduleId) => {
     try {
-      const response = await fetchWithAuth(`/api/learning/modules/${moduleId}/quiz/history`)
-      const data = await response.json()
+      const data = await learningService.getQuizHistory(moduleId)
       setQuizHistory(data)
     } catch (err) {
       console.error('Error fetching quiz history:', err)
@@ -135,24 +116,14 @@ function LearnPage() {
     }))
     
     try {
-      const response = await fetchWithAuth(`/api/learning/modules/${selectedModule.id}/quiz/submit`, {
-        method: 'POST',
-        body: JSON.stringify(answersArray)
-      })
-      
-      const results = await response.json()
-      
-      if (response.ok) {
-        setQuizResults(results)
-        setQuizSubmitted(true)
-        fetchModules()
-        fetchQuizHistory(selectedModule.id)
-      } else {
-        setQuizError(results.detail || 'Failed to submit quiz')
-      }
+      const results = await learningService.submitModuleQuiz(selectedModule.id, answersArray)
+      setQuizResults(results)
+      setQuizSubmitted(true)
+      fetchModules()
+      fetchQuizHistory(selectedModule.id)
     } catch (err) {
       console.error('Error submitting quiz:', err)
-      setQuizError(`Network error: ${err.message}`)
+      setQuizError(err.message || 'Failed to submit quiz')
     } finally {
       setSubmitting(false)
     }

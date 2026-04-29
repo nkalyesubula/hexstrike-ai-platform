@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 function LoginPage() {
   const navigate = useNavigate()
+  const { login } = useAuth()
   const [formData, setFormData] = useState({
     username: '',
     password: ''
@@ -16,64 +18,11 @@ function LoginPage() {
     setError('')
 
     try {
-      console.log('1. Logging in as:', formData.username)
-      
-      // Login request
-      const loginResponse = await fetch('/api/auth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          username: formData.username,
-          password: formData.password
-        })
-      })
-
-      const loginData = await loginResponse.json()
-      console.log('2. Login response:', loginResponse.status)
-
-      if (!loginResponse.ok) {
-        throw new Error(loginData.detail || 'Login failed')
+      const success = await login(formData.username, formData.password)
+      if (!success) {
+        throw new Error('Incorrect username or password')
       }
-
-      const token = loginData.access_token
-      console.log('3. Token received, length:', token.length)
-      
-      // Store token
-      localStorage.setItem('access_token', token)
-      
-      // Test if token is stored correctly
-      const storedToken = localStorage.getItem('access_token')
-      console.log('4. Token stored, retrieved length:', storedToken?.length)
-      
-      // Now make the me request with explicit headers
-      console.log('5. Fetching /api/auth/me...')
-      const meResponse = await fetch('/api/auth/me', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      })
-
-      console.log('6. Me response status:', meResponse.status)
-      console.log('7. Me response headers:', [...meResponse.headers.entries()])
-
-      if (!meResponse.ok) {
-        const errorText = await meResponse.text()
-        console.error('8. Me endpoint error:', errorText)
-        throw new Error(`Failed to get user info: ${meResponse.status}`)
-      }
-
-      const userData = await meResponse.json()
-      console.log('9. User data received:', userData)
-      
-      localStorage.setItem('user', JSON.stringify(userData))
-      
-      // Redirect
-      window.location.href = '/dashboard'
-      
+      navigate('/dashboard')
     } catch (err) {
       console.error('Login error:', err)
       setError(err.message || 'Login failed. Please try again.')

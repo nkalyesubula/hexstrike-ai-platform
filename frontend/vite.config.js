@@ -12,6 +12,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path
+      },
+      '/health': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path
       }
     }
   }

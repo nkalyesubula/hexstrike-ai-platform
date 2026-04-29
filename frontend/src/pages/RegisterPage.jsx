@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { authService } from '../services/authService'
 
 function RegisterPage() {
   const navigate = useNavigate()
@@ -30,27 +31,15 @@ function RegisterPage() {
     setError('')
 
     try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: formData.username,
-          email: formData.email,
-          full_name: formData.full_name,
-          password: formData.password
-        })
+      await authService.register({
+        username: formData.username,
+        email: formData.email,
+        full_name: formData.full_name,
+        password: formData.password
       })
-
-      if (response.ok) {
-        navigate('/login')
-      } else {
-        const error = await response.json()
-        setError(error.detail || 'Registration failed')
-      }
+      navigate('/login')
     } catch (err) {
-      setError('Network error. Is the backend running?')
+      setError(err.message || 'Network error. Is the backend running?')
     } finally {
       setLoading(false)
     }

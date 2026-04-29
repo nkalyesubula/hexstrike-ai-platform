@@ -1,23 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { Award, Brain, Target, TrendingUp, Bug, Activity, Clock, Shield, AlertTriangle } from 'lucide-react'
+import { api } from '../services/api'
 
 function DashboardPage() {
   const [stats, setStats] = useState(null)
   const [recentSessions, setRecentSessions] = useState([])
   const [achievements, setAchievements] = useState([])
   const [loading, setLoading] = useState(true)
-
-  const fetchWithAuth = async (endpoint) => {
-    const token = localStorage.getItem('access_token')
-    const response = await fetch(endpoint, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (response.status === 401) {
-      window.location.href = '/login'
-      throw new Error('Unauthorized')
-    }
-    return response.json()
-  }
 
   useEffect(() => {
     fetchDashboardData()
@@ -28,13 +17,13 @@ function DashboardPage() {
   const fetchDashboardData = async () => {
     try {
       const [statsData, sessionsData, achievementsData] = await Promise.all([
-        fetchWithAuth('/api/analytics/stats'),
-        fetchWithAuth('/api/tools/history?limit=5'),
-        fetchWithAuth('/api/analytics/achievements')
+        api.get('/api/analytics/stats'),
+        api.get('/api/tools/history?limit=5'),
+        api.get('/api/analytics/achievements')
       ])
-      setStats(statsData)
-      setRecentSessions(sessionsData)
-      setAchievements(achievementsData)
+      setStats(statsData.data)
+      setRecentSessions(sessionsData.data)
+      setAchievements(achievementsData.data)
     } catch (err) {
       console.error('Error fetching dashboard data:', err)
     } finally {
