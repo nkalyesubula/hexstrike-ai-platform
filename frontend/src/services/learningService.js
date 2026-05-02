@@ -1,41 +1,55 @@
-import { api } from './api'
+import { apiCall } from './api'
+
+async function jsonRequest(endpoint, options = {}) {
+  const response = await apiCall(endpoint, options)
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data?.detail || 'Learning request failed')
+  }
+
+  return data
+}
 
 export const learningService = {
   updateProgress: async (moduleId, completed, score, metadata = {}) => {
-    const response = await api.post('/api/learning/progress', {
-      module_id: moduleId,
-      completed,
-      score,
-      metadata
+    return jsonRequest('/api/learning/progress', {
+      method: 'POST',
+      body: JSON.stringify({
+        module_id: moduleId,
+        completed,
+        score,
+        metadata
+      })
     })
-    return response.data
   },
 
   getProgress: async () => {
-    const response = await api.get('/api/learning/progress')
-    return response.data
+    return jsonRequest('/api/learning/progress')
   },
 
   generateQuiz: async (topic, difficulty = 'intermediate') => {
-    const response = await api.get(`/api/learning/quiz/generate?topic=${topic}&difficulty=${difficulty}`)
-    return response.data
+    return jsonRequest(`/api/learning/quiz/generate?topic=${encodeURIComponent(topic)}&difficulty=${encodeURIComponent(difficulty)}`)
   },
 
   submitQuiz: async (submission) => {
-    const response = await api.post('/api/learning/quiz/submit', submission)
-    return response.data
+    return jsonRequest('/api/learning/quiz/submit', {
+      method: 'POST',
+      body: JSON.stringify(submission)
+    })
   },
 
   getFlashcards: async (topic, count = 20) => {
-    const response = await api.get(`/api/learning/flashcards/${topic}?count=${count}`)
-    return response.data
+    return jsonRequest(`/api/learning/flashcards/${encodeURIComponent(topic)}?count=${count}`)
   },
 
   reviewFlashcard: async (cardId, difficultyRating) => {
-    const response = await api.post('/api/learning/flashcards/review', {
-      card_id: cardId,
-      difficulty_rating: difficultyRating
+    return jsonRequest('/api/learning/flashcards/review', {
+      method: 'POST',
+      body: JSON.stringify({
+        card_id: cardId,
+        difficulty_rating: difficultyRating
+      })
     })
-    return response.data
   }
 }

@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
 import logging
-from app.database import get_db, UserProgress, QuizAttempt, User
+from app.database import get_db, UserProgress, QuizAttempt, User, UserFlashcardProgress
 from app.routers.auth import get_current_user
 from app.services.learning_service import learning_service
 
@@ -209,3 +209,58 @@ async def get_quiz_history(
         }
         for h in history
     ]
+
+@router.get("/flashcards/{topic}")
+async def get_flashcards(
+    topic: str,
+    count: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user)
+):
+    """Get flashcards for a learning module topic."""
+    try:
+        return learning_service.get_flashcards(topic, count)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Flashcards not found for this topic")
+
+@router.post("/flashcards/review")
+async def review_flashcard(
+    review: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Store the user's latest mastery rating for a flashcard."""
+    card_id = review.get("card_id")
+    difficulty_rating = review.get("difficulty_rating")
+
+    if card_id is None or difficulty_rating is None:
+        raise HTTPException(status_code=400, detail="card_id and difficulty_rating are required")
+
+    try:
+        card_id = int(card_id)
+        difficulty_rating = int(difficulty_rating)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="card_id and difficulty_rating must be numbers")
+
+    existing = db.query(UserFlashcardProgress).filter(
+        UserFlashcardProgress.user_id == current_user.id,
+        UserFlashcardProgress.flashcard_id == card_id
+    ).first()
+
+    if existing:
+        existing.mastery_level = difficulty_rating
+        existing.last_reviewed = datetime.utcnow()
+    else:
+        db.add(UserFlashcardProgress(
+            user_id=current_user.id,
+            flashcard_id=card_id,
+            mastery_level=difficulty_rating,
+            last_reviewed=datetime.utcnow()
+        ))
+
+    db.commit()
+
+    return {
+        "card_id": card_id,
+        "mastery_level": difficulty_rating,
+        "last_reviewed": datetime.utcnow()
+    }

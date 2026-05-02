@@ -9,7 +9,16 @@ function Flashcards({ topic }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [mastery, setMastery] = useState({})
+  const [masteryByTopic, setMasteryByTopic] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('flashcard_mastery_by_topic')) || {}
+    } catch {
+      return {}
+    }
+  })
+
+  const topicKey = topic || 'default'
+  const topicMastery = masteryByTopic[topicKey] || {}
 
   useEffect(() => {
     loadFlashcards()
@@ -17,22 +26,15 @@ function Flashcards({ topic }) {
 
   const loadFlashcards = async () => {
     setLoading(true)
+    setCurrentIndex(0)
+    setIsFlipped(false)
     try {
       const data = await learningService.getFlashcards(topic, 20)
-      setCards(data.cards || data)
+      const apiCards = Array.isArray(data?.cards) ? data.cards : Array.isArray(data) ? data : []
+      setCards(apiCards)
     } catch (error) {
       toast.error('Failed to load flashcards')
-      // Fallback mock flashcards
-      setCards([
-        { front: 'What is Nmap?', back: 'Network Mapper - a tool for network discovery and security scanning' },
-        { front: 'What is a vulnerability?', back: 'A weakness in a system that can be exploited by attackers' },
-        { front: 'What does SQL stand for?', back: 'Structured Query Language - used to manage databases' },
-        { front: 'What is phishing?', back: 'A social engineering attack using fake communications to steal data' },
-        { front: 'What is encryption?', back: 'Converting data into a coded format to prevent unauthorized access' },
-        { front: 'What is a firewall?', back: 'A network security system that monitors and controls incoming/outgoing traffic' },
-        { front: 'What is 2FA?', back: 'Two-Factor Authentication - requires two forms of verification' },
-        { front: 'What is a DDoS attack?', back: 'Distributed Denial of Service - overwhelming a system with traffic' },
-      ])
+      setCards([])
     } finally {
       setLoading(false)
     }
@@ -40,9 +42,23 @@ function Flashcards({ topic }) {
 
   const handleMastery = async (level) => {
     const cardId = cards[currentIndex]?.id || currentIndex
-    setMastery({ ...mastery, [cardId]: level })
+    const nextMasteryByTopic = {
+      ...masteryByTopic,
+      [topicKey]: {
+        ...topicMastery,
+        [cardId]: level
+      }
+    }
+
+    setMasteryByTopic(nextMasteryByTopic)
+    localStorage.setItem('flashcard_mastery_by_topic', JSON.stringify(nextMasteryByTopic))
+
+    try {
+      await learningService.reviewFlashcard(cardId, level)
+    } catch (error) {
+      // Keep the study flow smooth even if progress tracking is unavailable.
+    }
     
-    // Auto-advance after rating
     setTimeout(() => {
       if (currentIndex < cards.length - 1) {
         setCurrentIndex(currentIndex + 1)
@@ -53,88 +69,108 @@ function Flashcards({ topic }) {
     }, 500)
   }
 
-  if (loading) return <LoadingSpinner />
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '260px', color: '#9ca3af', flexDirection: 'column', gap: '16px' }}>
+        <LoadingSpinner />
+        <span>Loading flashcards...</span>
+      </div>
+    )
+  }
 
   if (cards.length === 0) {
     return (
-      <div className="text-center py-12">
-        <CreditCard className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-        <h3 className="text-xl font-bold text-white mb-2">No Flashcards Available</h3>
-        <p className="text-gray-400">Check back later for new content</p>
+      <div style={{ textAlign: 'center', padding: '48px 0' }}>
+        <CreditCard size={56} color="#6b7280" style={{ marginBottom: '16px' }} />
+        <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>No Flashcards Available</h3>
+        <p style={{ color: '#9ca3af' }}>This module does not have review cards yet.</p>
       </div>
     )
   }
 
   const currentCard = cards[currentIndex]
+  const masteredCount = Object.keys(topicMastery).filter(cardId =>
+    cards.some(card => String(card.id) === String(cardId))
+  ).length
+  const frontText = currentCard.front || currentCard.question || currentCard.term
+  const backText = currentCard.back || currentCard.answer || currentCard.definition
 
   return (
     <div>
-      {/* Progress */}
-      <div className="mb-6 flex justify-between items-center">
-        <span className="text-gray-400">Card {currentIndex + 1} of {cards.length}</span>
+      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        <div>
+          <span style={{ color: '#9ca3af', fontSize: '14px' }}>Card {currentIndex + 1} of {cards.length}</span>
+          <div style={{ marginTop: '8px', width: '220px', height: '8px', background: '#0f3460', borderRadius: '999px', overflow: 'hidden' }}>
+            <div style={{ width: `${((currentIndex + 1) / cards.length) * 100}%`, height: '100%', background: '#6c63ff' }} />
+          </div>
+        </div>
         <button
           onClick={loadFlashcards}
-          className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"
+          title="Reload flashcards"
+          style={{ width: '40px', height: '40px', background: '#0f3460', border: 'none', borderRadius: '8px', color: '#d1d5db', cursor: 'pointer' }}
         >
-          <RotateCcw className="w-4 h-4 text-gray-300" />
+          <RotateCcw size={16} />
         </button>
       </div>
 
-      {/* Flashcard */}
       <div
-        className="relative h-96 cursor-pointer mb-8"
+        role="button"
+        tabIndex={0}
         onClick={() => setIsFlipped(!isFlipped)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setIsFlipped(!isFlipped)
+          }
+        }}
+        style={{ height: '360px', cursor: 'pointer', marginBottom: '28px', perspective: '1200px' }}
       >
-        <div className={`absolute inset-0 transition-all duration-500 preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
-          {/* Front */}
-          <div className="absolute inset-0 glass-card p-8 flex items-center justify-center backface-hidden">
-            <div className="text-center">
-              <Brain className="w-12 h-12 text-purple-400 mx-auto mb-4" />
-              <p className="text-2xl text-white">{currentCard.front || currentCard.question || currentCard.term}</p>
-              <p className="text-gray-400 mt-4 text-sm">Click to flip</p>
+        <div style={{ position: 'relative', width: '100%', height: '100%', transition: 'transform 0.5s', transformStyle: 'preserve-3d', transform: isFlipped ? 'rotateY(180deg)' : 'none' }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #0f3460 0%, #16213e 100%)', border: '1px solid #2b3f69', borderRadius: '12px', padding: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', backfaceVisibility: 'hidden' }}>
+            <div style={{ textAlign: 'center', maxWidth: '760px' }}>
+              <Brain size={48} color="#a78bfa" style={{ marginBottom: '16px' }} />
+              <p style={{ fontSize: '24px', color: 'white', lineHeight: 1.45, margin: 0 }}>{frontText}</p>
+              <p style={{ color: '#9ca3af', marginTop: '18px', fontSize: '14px' }}>Click to reveal answer</p>
             </div>
           </div>
           
-          {/* Back */}
-          <div className="absolute inset-0 glass-card p-8 flex items-center justify-center backface-hidden rotate-y-180">
-            <div className="text-center">
-              <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Check className="w-6 h-6 text-green-400" />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #103f55 0%, #16213e 100%)', border: '1px solid #2b6953', borderRadius: '12px', padding: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+            <div style={{ textAlign: 'center', maxWidth: '760px' }}>
+              <div style={{ width: '48px', height: '48px', background: '#10b98120', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <Check size={24} color="#34d399" />
               </div>
-              <p className="text-xl text-white">{currentCard.back || currentCard.answer || currentCard.definition}</p>
+              <p style={{ fontSize: '20px', color: 'white', lineHeight: 1.55, margin: 0 }}>{backText}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Rating Buttons */}
       {isFlipped && (
-        <div className="flex gap-4 justify-center">
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
-            onClick={() => handleMastery(1)}
-            className="px-6 py-3 bg-red-600/20 hover:bg-red-600/40 rounded-xl text-red-400 transition-colors"
+            onClick={(event) => { event.stopPropagation(); handleMastery(1) }}
+            style={{ padding: '12px 22px', background: '#ef444420', border: '1px solid #ef444450', borderRadius: '8px', color: '#f87171', cursor: 'pointer', fontWeight: 'bold' }}
           >
-            <X className="w-5 h-5 inline mr-2" />
+            <X size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
             Hard
           </button>
           <button
-            onClick={() => handleMastery(3)}
-            className="px-6 py-3 bg-yellow-600/20 hover:bg-yellow-600/40 rounded-xl text-yellow-400 transition-colors"
+            onClick={(event) => { event.stopPropagation(); handleMastery(3) }}
+            style={{ padding: '12px 22px', background: '#f59e0b20', border: '1px solid #f59e0b50', borderRadius: '8px', color: '#fbbf24', cursor: 'pointer', fontWeight: 'bold' }}
           >
             Medium
           </button>
           <button
-            onClick={() => handleMastery(5)}
-            className="px-6 py-3 bg-green-600/20 hover:bg-green-600/40 rounded-xl text-green-400 transition-colors"
+            onClick={(event) => { event.stopPropagation(); handleMastery(5) }}
+            style={{ padding: '12px 22px', background: '#10b98120', border: '1px solid #10b98150', borderRadius: '8px', color: '#34d399', cursor: 'pointer', fontWeight: 'bold' }}
           >
-            <Check className="w-5 h-5 inline mr-2" />
+            <Check size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
             Easy
           </button>
         </div>
       )}
 
-      {/* Navigation */}
-      <div className="flex justify-between mt-8">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '28px' }}>
         <button
           onClick={() => {
             if (currentIndex > 0) {
@@ -143,10 +179,12 @@ function Flashcards({ topic }) {
             }
           }}
           disabled={currentIndex === 0}
-          className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50"
+          title="Previous card"
+          style={{ width: '44px', height: '44px', background: '#0f3460', border: 'none', borderRadius: '8px', color: 'white', cursor: currentIndex === 0 ? 'not-allowed' : 'pointer', opacity: currentIndex === 0 ? 0.5 : 1 }}
         >
-          <ChevronLeft className="w-6 h-6" />
+          <ChevronLeft size={24} />
         </button>
+        <span style={{ color: '#9ca3af', fontSize: '14px' }}>{masteredCount}/{cards.length} rated</span>
         <button
           onClick={() => {
             if (currentIndex < cards.length - 1) {
@@ -155,23 +193,12 @@ function Flashcards({ topic }) {
             }
           }}
           disabled={currentIndex === cards.length - 1}
-          className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors disabled:opacity-50"
+          title="Next card"
+          style={{ width: '44px', height: '44px', background: '#0f3460', border: 'none', borderRadius: '8px', color: 'white', cursor: currentIndex === cards.length - 1 ? 'not-allowed' : 'pointer', opacity: currentIndex === cards.length - 1 ? 0.5 : 1 }}
         >
-          <ChevronRight className="w-6 h-6" />
+          <ChevronRight size={24} />
         </button>
       </div>
-
-      <style jsx>{`
-        .preserve-3d {
-          transform-style: preserve-3d;
-        }
-        .backface-hidden {
-          backface-visibility: hidden;
-        }
-        .rotate-y-180 {
-          transform: rotateY(180deg);
-        }
-      `}</style>
     </div>
   )
 }
