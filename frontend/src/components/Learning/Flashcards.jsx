@@ -1,17 +1,25 @@
-import React, { useState, useEffect } from 'react'
-import { CreditCard, RotateCcw, ChevronLeft, ChevronRight, Check, X, Brain } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Brain, Check, ChevronLeft, ChevronRight, CreditCard, RotateCcw, X } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { learningService } from '../../services/learningService'
 import LoadingSpinner from '../Common/LoadingSpinner'
-import toast from 'react-hot-toast'
+
+const MASTERY_STORAGE_KEY = 'flashcard_mastery_by_topic'
+const MASTERY_LEVELS = {
+  hard: 1,
+  medium: 3,
+  easy: 5,
+}
 
 function Flashcards({ topic }) {
   const [cards, setCards] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [totalCards, setTotalCards] = useState(20)
   const [masteryByTopic, setMasteryByTopic] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('flashcard_mastery_by_topic')) || {}
+      return JSON.parse(localStorage.getItem(MASTERY_STORAGE_KEY)) || {}
     } catch {
       return {}
     }
@@ -24,49 +32,89 @@ function Flashcards({ topic }) {
     loadFlashcards()
   }, [topic])
 
-  const loadFlashcards = async () => {
+  const persistMastery = (nextMasteryByTopic) => {
+    setMasteryByTopic(nextMasteryByTopic)
+    localStorage.setItem(MASTERY_STORAGE_KEY, JSON.stringify(nextMasteryByTopic))
+  }
+
+  const loadFlashcards = async (options = {}) => {
+    const { ignoreSavedMastery = false } = options
     setLoading(true)
     setCurrentIndex(0)
     setIsFlipped(false)
+
     try {
       const data = await learningService.getFlashcards(topic, 20)
       const apiCards = Array.isArray(data?.cards) ? data.cards : Array.isArray(data) ? data : []
-      setCards(apiCards)
+      const activeCards = ignoreSavedMastery
+        ? apiCards
+        : apiCards.filter((card) => (topicMastery[card.id] || 0) < MASTERY_LEVELS.easy)
+      setCards(activeCards)
+      setTotalCards(data?.count || apiCards.length || 20)
     } catch (error) {
       toast.error('Failed to load flashcards')
       setCards([])
+      setTotalCards(20)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleMastery = async (level) => {
-    const cardId = cards[currentIndex]?.id || currentIndex
+  const restartFlashcards = async () => {
+    const nextMasteryByTopic = { ...masteryByTopic }
+    delete nextMasteryByTopic[topicKey]
+    persistMastery(nextMasteryByTopic)
+    await loadFlashcards({ ignoreSavedMastery: true })
+  }
+
+  const handleMastery = async (masteryType) => {
+    const currentCard = cards[currentIndex]
+    if (!currentCard) {
+      return
+    }
+
+    const masteryLevel = MASTERY_LEVELS[masteryType]
     const nextMasteryByTopic = {
       ...masteryByTopic,
       [topicKey]: {
         ...topicMastery,
-        [cardId]: level
+        [currentCard.id]: masteryLevel
       }
     }
 
-    setMasteryByTopic(nextMasteryByTopic)
-    localStorage.setItem('flashcard_mastery_by_topic', JSON.stringify(nextMasteryByTopic))
+    persistMastery(nextMasteryByTopic)
+    setIsFlipped(false)
 
     try {
-      await learningService.reviewFlashcard(cardId, level)
+      await learningService.reviewFlashcard(currentCard.id, masteryLevel)
     } catch (error) {
-      // Keep the study flow smooth even if progress tracking is unavailable.
+     
     }
-    
-    setTimeout(() => {
-      if (currentIndex < cards.length - 1) {
-        setCurrentIndex(currentIndex + 1)
-        setIsFlipped(false)
-      } else {
-        toast.success('You completed all flashcards!')
-      }
-    }, 500)
+
+    const remainingCards = cards.filter((_, index) => index !== currentIndex)
+    let nextCards = remainingCards
+
+    if (masteryType === 'hard') {
+      const insertIndex = Math.min(currentIndex + 3, remainingCards.length)
+      nextCards = [...remainingCards]
+      nextCards.splice(insertIndex, 0, currentCard)
+    }
+
+    if (masteryType === 'medium') {
+      const insertIndex = Math.min(currentIndex + 8, remainingCards.length)
+      nextCards = [...remainingCards]
+      nextCards.splice(insertIndex, 0, currentCard)
+    }
+
+    setCards(nextCards)
+
+    if (nextCards.length === 0) {
+      setCurrentIndex(0)
+      toast.success('You mastered all 20 flashcards in this module.')
+      return
+    }
+
+    setCurrentIndex(Math.min(currentIndex, nextCards.length - 1))
   }
 
   if (loading) {
@@ -82,30 +130,48 @@ function Flashcards({ topic }) {
     return (
       <div style={{ textAlign: 'center', padding: '48px 0' }}>
         <CreditCard size={56} color="#6b7280" style={{ marginBottom: '16px' }} />
-        <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>No Flashcards Available</h3>
-        <p style={{ color: '#9ca3af' }}>This module does not have review cards yet.</p>
+        <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>All Flashcards Mastered</h3>
+        <p style={{ color: '#9ca3af' }}>Reload the set if you want to review this module again.</p>
+        <button
+          onClick={restartFlashcards}
+          title="Reload flashcards"
+          style={{ marginTop: '20px', padding: '12px 22px', background: '#0f3460', border: '1px solid #223458', borderRadius: '8px', color: '#d1d5db', cursor: 'pointer', fontWeight: 'bold' }}
+        >
+          Reload Flashcards
+        </button>
       </div>
     )
   }
 
   const currentCard = cards[currentIndex]
-  const masteredCount = Object.keys(topicMastery).filter(cardId =>
-    cards.some(card => String(card.id) === String(cardId))
-  ).length
+  const masteredCount = Object.values(topicMastery).filter((level) => level >= MASTERY_LEVELS.easy).length
   const frontText = currentCard.front || currentCard.question || currentCard.term
   const backText = currentCard.back || currentCard.answer || currentCard.definition
 
   return (
     <div>
-      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-        <div>
-          <span style={{ color: '#9ca3af', fontSize: '14px' }}>Card {currentIndex + 1} of {cards.length}</span>
-          <div style={{ marginTop: '8px', width: '220px', height: '8px', background: '#0f3460', borderRadius: '999px', overflow: 'hidden' }}>
-            <div style={{ width: `${((currentIndex + 1) / cards.length) * 100}%`, height: '100%', background: '#6c63ff' }} />
+      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: '280px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+            <span style={{ color: '#9ca3af', fontSize: '14px' }}>{cards.length} cards remaining</span>
+            <span style={{ color: '#d1d5db', fontSize: '14px', fontWeight: 'bold' }}>{masteredCount}/{totalCards} mastered</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(totalCards, 1)}, minmax(0, 1fr))`, gap: '4px', width: '100%' }}>
+            {Array.from({ length: totalCards }, (_, index) => (
+              <div
+                key={`${topicKey}-segment-${index}`}
+                style={{
+                  height: '12px',
+                  borderRadius: '999px',
+                  background: index < masteredCount ? '#10b981' : '#0f3460',
+                  border: `1px solid ${index < masteredCount ? '#34d399' : '#223458'}`
+                }}
+              />
+            ))}
           </div>
         </div>
         <button
-          onClick={loadFlashcards}
+          onClick={restartFlashcards}
           title="Reload flashcards"
           style={{ width: '40px', height: '40px', background: '#0f3460', border: 'none', borderRadius: '8px', color: '#d1d5db', cursor: 'pointer' }}
         >
@@ -133,7 +199,7 @@ function Flashcards({ topic }) {
               <p style={{ color: '#9ca3af', marginTop: '18px', fontSize: '14px' }}>Click to reveal answer</p>
             </div>
           </div>
-          
+
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #103f55 0%, #16213e 100%)', border: '1px solid #2b6953', borderRadius: '12px', padding: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
             <div style={{ textAlign: 'center', maxWidth: '760px' }}>
               <div style={{ width: '48px', height: '48px', background: '#10b98120', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -148,20 +214,20 @@ function Flashcards({ topic }) {
       {isFlipped && (
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
-            onClick={(event) => { event.stopPropagation(); handleMastery(1) }}
+            onClick={(event) => { event.stopPropagation(); handleMastery('hard') }}
             style={{ padding: '12px 22px', background: '#ef444420', border: '1px solid #ef444450', borderRadius: '8px', color: '#f87171', cursor: 'pointer', fontWeight: 'bold' }}
           >
             <X size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
             Hard
           </button>
           <button
-            onClick={(event) => { event.stopPropagation(); handleMastery(3) }}
+            onClick={(event) => { event.stopPropagation(); handleMastery('medium') }}
             style={{ padding: '12px 22px', background: '#f59e0b20', border: '1px solid #f59e0b50', borderRadius: '8px', color: '#fbbf24', cursor: 'pointer', fontWeight: 'bold' }}
           >
             Medium
           </button>
           <button
-            onClick={(event) => { event.stopPropagation(); handleMastery(5) }}
+            onClick={(event) => { event.stopPropagation(); handleMastery('easy') }}
             style={{ padding: '12px 22px', background: '#10b98120', border: '1px solid #10b98150', borderRadius: '8px', color: '#34d399', cursor: 'pointer', fontWeight: 'bold' }}
           >
             <Check size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
@@ -184,7 +250,7 @@ function Flashcards({ topic }) {
         >
           <ChevronLeft size={24} />
         </button>
-        <span style={{ color: '#9ca3af', fontSize: '14px' }}>{masteredCount}/{cards.length} rated</span>
+        <span style={{ color: '#9ca3af', fontSize: '14px' }}>{masteredCount}/{totalCards} mastered</span>
         <button
           onClick={() => {
             if (currentIndex < cards.length - 1) {
