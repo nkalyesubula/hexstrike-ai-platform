@@ -12,6 +12,7 @@ const Dashboard = lazy(() => import('./pages/DashboardPage'))
 const LabPage = lazy(() => import('./pages/LabPage'))
 const LearnPage = lazy(() => import('./pages/LearnPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const QuizPage = lazy(() => import('./pages/QuizPage'))
 
 function HomePage() {
   const [backendStatus, setBackendStatus] = React.useState('checking...')
@@ -102,6 +103,16 @@ function AppContent() {
           <Route path="/learn" element={
             <ProtectedRoute>
               <LearnPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/quiz" element={
+            <ProtectedRoute>
+              <QuizPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/quiz/:topic" element={
+            <ProtectedRoute>
+              <QuizPage />
             </ProtectedRoute>
           } />
           <Route path="/profile" element={

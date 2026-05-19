@@ -5,7 +5,7 @@ import httpx
 import asyncio
 import re
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.database import get_db, PentestSession, User
 from app.routers.auth import get_current_user
 from app.config import settings
@@ -16,6 +16,11 @@ class BatchExecutionRequest(BaseModel):
     target: str
     tools: list[str]
     auto_mode: bool = False
+    parameters: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+class ToolExecutionRequest(BaseModel):
+    target: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
 
 progress_store = {}
 
@@ -56,9 +61,46 @@ async def execute_batch(
         tools=request.tools,
         target=request.target,
         session_id=session.id,
-        user_id=current_user.id
+        user_id=current_user.id,
+        parameters=request.parameters
     )
     
+    return {"success": True, "session_id": session.id}
+
+@router.post("/execute/{tool_name}")
+async def execute_tool(
+    tool_name: str,
+    request: ToolExecutionRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    session = PentestSession(
+        user_id=current_user.id,
+        target=request.target,
+        status="running",
+        started_at=datetime.utcnow()
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    progress_store[session.id] = {
+        "current_tool": 0,
+        "total_tools": 1,
+        "current_tool_name": tool_name,
+        "status": f"Starting {tool_name}"
+    }
+
+    background_tasks.add_task(
+        execute_batch_background,
+        tools=[tool_name],
+        target=request.target,
+        session_id=session.id,
+        user_id=current_user.id,
+        parameters={tool_name: request.parameters}
+    )
+
     return {"success": True, "session_id": session.id}
 
 @router.get("/session/{session_id}")
@@ -110,7 +152,13 @@ async def get_execution_history(
         for s in sessions
     ]
 
-async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int):
+async def execute_batch_background(
+    tools: list,
+    target: str,
+    session_id: int,
+    user_id: int,
+    parameters: Dict[str, Dict[str, Any]] | None = None
+):
     from app.database import SessionLocal
     
     db = SessionLocal()
@@ -120,6 +168,7 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
             for idx, tool_name in enumerate(tools):
+                tool_parameters = (parameters or {}).get(tool_name, {})
                 progress_store[session_id] = {
                     "current_tool": idx,
                     "total_tools": len(tools),
@@ -132,7 +181,7 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
                 try:
                     response = await client.post(
                         f"{settings.HEXSTRIKE_URL}/api/tools/{tool_name}",
-                        json={"target": target},
+                        json={"target": target, "parameters": tool_parameters},
                         timeout=180
                     )
                     
@@ -170,6 +219,7 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
                 "tool_results": tool_results,
                 "formatted_findings": all_findings,
                 "tools_used": tools,
+                "parameters": parameters or {},
                 "target": target
             }
         

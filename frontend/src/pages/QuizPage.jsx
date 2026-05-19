@@ -246,7 +246,8 @@ function QuizPage() {
 
   if (!topic) {
     return (
-      <div className="container mx-auto px-6 py-8">
+      <div className="quiz-page">
+        <div className="container mx-auto px-6 py-8">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Quiz Center</h1>
           <p className="text-gray-300 text-lg">Choose a topic to test your knowledge</p>
@@ -274,13 +275,14 @@ function QuizPage() {
             </button>
           ))}
         </div>
+        </div>
       </div>
     )
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="quiz-page flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-purple-500"></div>
       </div>
     )
@@ -289,6 +291,7 @@ function QuizPage() {
   if (submitted) {
     const passed = score >= (quiz.passing_score || 70)
     return (
+      <div className="quiz-page">
       <div className="container mx-auto px-6 py-8 max-w-4xl">
         <div className="glass-card p-8 text-center">
           <div className={`w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 ${
@@ -348,6 +351,7 @@ function QuizPage() {
           </div>
         </div>
       </div>
+      </div>
     )
   }
 
@@ -356,6 +360,7 @@ function QuizPage() {
   const isLastQuestion = currentQuestion === quiz.questions.length - 1
 
   return (
+    <div className="quiz-page">
     <div className="container mx-auto px-6 py-8 max-w-4xl">
       {/* Header */}
       <div className="mb-6">
@@ -500,6 +505,7 @@ function QuizPage() {
           ))}
         </div>
       </div>
+    </div>
     </div>
   )
 }

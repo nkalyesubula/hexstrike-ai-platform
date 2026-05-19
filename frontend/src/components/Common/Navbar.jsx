@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
-import { Shield, LayoutDashboard, FlaskConical, BookOpen, User, LogOut, Menu, X, Home } from 'lucide-react'
+import { Shield, LayoutDashboard, FlaskConical, BookOpen, HelpCircle, User, LogOut, Menu, X, Home } from 'lucide-react'
 
 function Navbar() {
   const { isAuthenticated, logout, user } = useAuth()
@@ -31,6 +31,7 @@ function Navbar() {
     { path: '/dashboard', name: 'Dashboard', icon: LayoutDashboard },
     { path: '/lab', name: 'Pentest Lab', icon: FlaskConical },
     { path: '/learn', name: 'Learn', icon: BookOpen },
+    { path: '/quiz', name: 'Quiz', icon: HelpCircle },
     { path: '/profile', name: 'Profile', icon: User },
   ]
 
