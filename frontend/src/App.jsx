@@ -1,11 +1,12 @@
 import React, { lazy, Suspense } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Navbar from "./components/Common/Navbar";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import { useAuth } from "./hooks/useAuth";
 
 // Lazy load components
 const Dashboard = lazy(() => import("./pages/DashboardPage"));
@@ -16,12 +17,18 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 function HomePage() {
 	const [backendStatus, setBackendStatus] = React.useState("checking...");
 
+	const { isAuthenticated } = useAuth();
+
 	React.useEffect(() => {
 		fetch("/api/health")
 			.then((res) => res.json())
 			.then((data) => setBackendStatus("✅ Connected: " + data.status))
 			.catch((err) => setBackendStatus("❌ Backend not reachable"));
 	}, []);
+
+	if (isAuthenticated) {
+		return <Navigate to="/dashboard" replace />;
+	}
 
 	return (
 		<div

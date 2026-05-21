@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { Shield, LayoutDashboard, FlaskConical, BookOpen, HelpCircle, User, LogOut, Menu, X, Home } from "lucide-react";
 
@@ -171,10 +171,10 @@ function Navbar() {
 					}}
 				>
 					<div style={{ display: "flex", gap: "4px" }}>
-						<Link to="/" style={getLinkStyle("/")}>
+						{/* <Link to="/" style={getLinkStyle("/")}>
 							<Home size={18} />
 							<span>Home</span>
-						</Link>
+						</Link> */}
 						{navLinks.map((link) => {
 							const Icon = link.icon;
 							const active = isActive(link.path);
