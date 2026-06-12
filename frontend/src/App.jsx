@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Navbar from './components/Common/Navbar'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import HintAssistant from './components/HintAssistant'
 
 // Lazy load components
 const Dashboard = lazy(() => import('./pages/DashboardPage'))
@@ -73,6 +74,7 @@ function AppContent() {
   return (
     <Router>
       <Navbar />
+      <HintAssistant />
       <Suspense fallback={
         <div style={{
           display: 'flex',

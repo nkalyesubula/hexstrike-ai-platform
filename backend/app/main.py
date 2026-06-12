@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, tools, learning, analytics
+from app.routers import auth, tools, learning, analytics, hints
 from app.services.websocket_manager import manager
 
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +52,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(tools.router, prefix="/api/tools", tags=["Tools"])
 app.include_router(learning.router, prefix="/api/learning", tags=["Learning"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(hints.router, prefix="/api/hints", tags=["Hints"])
 
 @app.get("/")
 async def root():
