@@ -152,7 +152,7 @@ async def get_execution_history(
         for s in sessions
     ]
 
-async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int):
+async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int, parameters: dict = None):
     from app.database import SessionLocal
     
     db = SessionLocal()
@@ -161,9 +161,25 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
     
     # Tool classifications - only special cases
     # Make sure this list includes ALL web tools
-    needs_url_prefix = ["nikto", "gobuster", "nuclei", "wpscan", "whatweb", "dirb", "dirsearch", "ffuf", "wfuzz", "gau", "katana", "hakrawler", "http", "https"]
+    # Tool classifications based on your tools_service.py
+    needs_url_prefix = [
+        "nikto", "gobuster", "nuclei", "wpscan", "whatweb", "dirb", "dirsearch", 
+        "ffuf", "wfuzz", "gau", "katana", "hakrawler", "httpx", "feroxbuster", 
+        "jaeles", "dalfox", "wafw00f", "testssl", "sslscan", "sslyze", "jwt_tool",
+        "arjun", "paramspider", "x8", "graphql_voyager"
+    ]
+
     needs_url_param = ["sqlmap"]
-    needs_url_parameter = ["gobuster", "wpscan", "whatweb", "dirb", "dirsearch", "ffuf", "wfuzz"]
+
+    needs_url_parameter = [
+        "gobuster","wpscan", "whatweb", "dirb", "dirsearch", 
+        "ffuf", "wfuzz", "httpx", "feroxbuster", "jaeles", "dalfox"
+    ]
+
+    skip_tools = [
+        "hydra", "john", "metasploit", "volatility", "aircrack", 
+        "setoolkit", "theharvester", "recon", "autopsy", "nessus"
+    ]
     
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:

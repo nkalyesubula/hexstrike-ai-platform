@@ -323,7 +323,6 @@ class ToolsService:
                     {"name": "command", "label": "RPC Command", "type": "text", "placeholder": "querydispinfo"}
                 ]
             },
-<<<<<<< HEAD
             
             # SQL Injection
             "sqlmap": {
@@ -340,16 +339,6 @@ class ToolsService:
                     {"name": "risk", "label": "Risk (1-3)", "type": "number", "min": 1, "max": 3},
                     {"name": "dbms", "label": "Database Type", "type": "select", 
                     "options": ["auto", "mysql", "postgresql", "mssql", "oracle"]}
-=======
-            "enum4linux": {
-                "name": "Enum4linux",
-                "category": "SMB Enumeration",
-                "description": "SMB enumeration (users, groups, shares)",
-                "icon": "🐧",
-                "default_params": {"mode": "-a"},
-                "fields": [
-                    {"name": "mode", "label": "Scan Mode", "type": "select", "options": ["-a (All)", "-U (Users)", "-S (Shares)"]}
->>>>>>> origin/development
                 ]
             },
             "enum4linux-ng": {
@@ -444,13 +433,6 @@ class ToolsService:
                     {"name": "payload", "label": "Payload", "type": "select", "options": ["reverse_shell", "meterpreter"]},
                     {"name": "exploit", "label": "Exploit Path", "type": "text"}
                 ]
-            },
-            "sqlmap": {
-                "name": "SQLMap",
-                "category": "Exploitation",
-                "description": "Automatic SQL injection tool",
-                "icon": "💉",
-                "fields": []
             },
             "nosqlmap": {
                 "name": "NoSQLMap",
