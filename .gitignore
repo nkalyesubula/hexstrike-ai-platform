@@ -25,3 +25,5 @@ build/
 .vscode/
 .eslintrc
 .prettierrc
+hexstrike.db*.db
+hexstrike.db

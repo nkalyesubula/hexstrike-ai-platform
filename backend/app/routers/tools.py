@@ -5,7 +5,7 @@ import httpx
 import asyncio
 import re
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.database import get_db, PentestSession, User
 from app.routers.auth import get_current_user
 from app.config import settings
@@ -16,6 +16,11 @@ class BatchExecutionRequest(BaseModel):
     target: str
     tools: list[str]
     auto_mode: bool = False
+    parameters: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+class ToolExecutionRequest(BaseModel):
+    target: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
 
 progress_store = {}
 
@@ -56,9 +61,46 @@ async def execute_batch(
         tools=request.tools,
         target=request.target,
         session_id=session.id,
-        user_id=current_user.id
+        user_id=current_user.id,
+        parameters=request.parameters
     )
     
+    return {"success": True, "session_id": session.id}
+
+@router.post("/execute/{tool_name}")
+async def execute_tool(
+    tool_name: str,
+    request: ToolExecutionRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    session = PentestSession(
+        user_id=current_user.id,
+        target=request.target,
+        status="running",
+        started_at=datetime.utcnow()
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    progress_store[session.id] = {
+        "current_tool": 0,
+        "total_tools": 1,
+        "current_tool_name": tool_name,
+        "status": f"Starting {tool_name}"
+    }
+
+    background_tasks.add_task(
+        execute_batch_background,
+        tools=[tool_name],
+        target=request.target,
+        session_id=session.id,
+        user_id=current_user.id,
+        parameters={tool_name: request.parameters}
+    )
+
     return {"success": True, "session_id": session.id}
 
 @router.get("/session/{session_id}")
@@ -110,129 +152,6 @@ async def get_execution_history(
         for s in sessions
     ]
 
-# async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int):
-#     from app.database import SessionLocal
-    
-#     db = SessionLocal()
-#     all_findings = []
-#     tool_results = {}
-    
-#     # Tools that need full URL with http:// prefix
-#     url_based_tools = ["nikto", "gobuster", "nuclei", "wpscan", "whatweb", "dirb", "dirsearch", "ffuf", "wfuzz", "gau", "katana", "hakrawler"]
-    
-#     try:
-#         async with httpx.AsyncClient(timeout=300.0) as client:
-#             for idx, tool_name in enumerate(tools):
-#                 progress_store[session_id] = {
-#                     "current_tool": idx,
-#                     "total_tools": len(tools),
-#                     "current_tool_name": tool_name,
-#                     "status": f"Running {tool_name} ({idx+1}/{len(tools)})"
-#                 }
-                
-#                 # Build payload based on tool type
-#                 if tool_name == "sqlmap":
-#                     # SQLMap needs special payload with URL parameter
-#                     if not (target.startswith("http://") or target.startswith("https://")):
-#                         url_target = f"http://{target}"
-#                     else:
-#                         url_target = target
-                    
-#                     if '?' not in url_target:
-#                         error_msg = f"SQLMap requires a URL with parameter (e.g., http://example.com/page.php?id=1). Got: {url_target}"
-#                         print(f"  Error: {error_msg}")
-#                         all_findings.append({
-#                             "type": "error",
-#                             "title": "SQLMap Error",
-#                             "description": error_msg,
-#                             "severity": "error",
-#                             "tool": tool_name
-#                         })
-#                         tool_results[tool_name] = {"error": error_msg}
-#                         continue
-                    
-#                     payload = {
-#                         "url": url_target,
-#                         "batch": True,
-#                         "level": 1,
-#                         "risk": 1
-#                     }
-#                     print(f"[{datetime.now()}] Running {tool_name} against {url_target}")
-#                     print(f"  SQLMap payload: {payload}")
-                    
-#                 elif tool_name in url_based_tools:
-#                     # Web tools need http:// prefix
-#                     if not (target.startswith("http://") or target.startswith("https://")):
-#                         web_target = f"http://{target}"
-#                     else:
-#                         web_target = target
-#                     payload = {"target": web_target}
-#                     print(f"[{datetime.now()}] Running {tool_name} against {web_target}")
-                    
-#                 else:
-#                     # Normal tools (nmap, hydra, etc.) use target as-is
-#                     payload = {"target": target}
-#                     print(f"[{datetime.now()}] Running {tool_name} against {target}")
-                
-#                 try:
-#                     response = await client.post(
-#                         f"{settings.HEXSTRIKE_URL}/api/tools/{tool_name}",
-#                         json=payload,
-#                         timeout=180
-#                     )
-                    
-#                     if response.status_code == 200:
-#                         raw_result = response.json()
-#                         tool_results[tool_name] = raw_result
-                        
-#                         stdout = raw_result.get("stdout", "")
-#                         if not stdout:
-#                             stdout = str(raw_result)
-                        
-#                         # Use the target with http:// for findings display
-#                         display_target = web_target if tool_name in url_based_tools else target
-#                         findings = parse_findings(tool_name, display_target, stdout)
-                        
-#                         for finding in findings:
-#                             finding["tool"] = tool_name
-#                             all_findings.append(finding)
-                        
-#                         print(f"  Found {len(findings)} findings from {tool_name}")
-                        
-#                     else:
-#                         tool_results[tool_name] = {"error": f"HTTP {response.status_code}"}
-                        
-#                 except Exception as e:
-#                     print(f"Error running {tool_name}: {e}")
-#                     tool_results[tool_name] = {"error": str(e)}
-        
-#         progress_store[session_id] = {"status": "completed"}
-        
-#         session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
-#         if session:
-#             session.status = "completed"
-#             session.completed_at = datetime.utcnow()
-#             session.results_json = {
-#                 "tool_results": tool_results,
-#                 "formatted_findings": all_findings,
-#                 "tools_used": tools,
-#                 "target": target
-#             }
-        
-#         db.commit()
-#         print(f"Batch completed: {len(all_findings)} total findings")
-        
-#     except Exception as e:
-#         print(f"Batch error: {e}")
-#         session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
-#         if session:
-#             session.status = "failed"
-#             session.results_json = {"error": str(e)}
-#         db.commit()
-#         progress_store[session_id] = {"status": "failed", "error": str(e)}
-#     finally:
-#         db.close()
-
 async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int):
     from app.database import SessionLocal
     
@@ -249,6 +168,7 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
             for idx, tool_name in enumerate(tools):
+                tool_parameters = (parameters or {}).get(tool_name, {})
                 progress_store[session_id] = {
                     "current_tool": idx,
                     "total_tools": len(tools),
@@ -336,6 +256,7 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
                 "tool_results": tool_results,
                 "formatted_findings": all_findings,
                 "tools_used": tools,
+                "parameters": parameters or {},
                 "target": target
             }
         db.commit()
