@@ -131,14 +131,17 @@ class ToolsService:
             "sqlmap": {
                 "name": "SQLMap",
                 "category": "SQL Injection",
-                "description": "Automatic SQL injection and database takeover",
+                "description": "Automatic SQL injection - Requires FULL URL with parameter",
                 "icon": "💉",
-                "default_params": {"level": 1, "risk": 1},
+                "needs_url_with_param": True,  # Flag for frontend
+                "default_params": {"level": 1, "risk": 1, "batch": True},
                 "fields": [
+                    {"name": "url", "label": "Target URL with Parameter", "type": "text", 
+                    "placeholder": "http://192.168.56.101/page.php?id=1", "required": True},
                     {"name": "level", "label": "Level (1-5)", "type": "number", "min": 1, "max": 5},
                     {"name": "risk", "label": "Risk (1-3)", "type": "number", "min": 1, "max": 3},
                     {"name": "dbms", "label": "Database Type", "type": "select", 
-                     "options": ["auto", "mysql", "postgresql", "mssql", "oracle"]}
+                    "options": ["auto", "mysql", "postgresql", "mssql", "oracle"]}
                 ]
             },
             

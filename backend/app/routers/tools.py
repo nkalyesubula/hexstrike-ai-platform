@@ -110,12 +110,141 @@ async def get_execution_history(
         for s in sessions
     ]
 
+# async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int):
+#     from app.database import SessionLocal
+    
+#     db = SessionLocal()
+#     all_findings = []
+#     tool_results = {}
+    
+#     # Tools that need full URL with http:// prefix
+#     url_based_tools = ["nikto", "gobuster", "nuclei", "wpscan", "whatweb", "dirb", "dirsearch", "ffuf", "wfuzz", "gau", "katana", "hakrawler"]
+    
+#     try:
+#         async with httpx.AsyncClient(timeout=300.0) as client:
+#             for idx, tool_name in enumerate(tools):
+#                 progress_store[session_id] = {
+#                     "current_tool": idx,
+#                     "total_tools": len(tools),
+#                     "current_tool_name": tool_name,
+#                     "status": f"Running {tool_name} ({idx+1}/{len(tools)})"
+#                 }
+                
+#                 # Build payload based on tool type
+#                 if tool_name == "sqlmap":
+#                     # SQLMap needs special payload with URL parameter
+#                     if not (target.startswith("http://") or target.startswith("https://")):
+#                         url_target = f"http://{target}"
+#                     else:
+#                         url_target = target
+                    
+#                     if '?' not in url_target:
+#                         error_msg = f"SQLMap requires a URL with parameter (e.g., http://example.com/page.php?id=1). Got: {url_target}"
+#                         print(f"  Error: {error_msg}")
+#                         all_findings.append({
+#                             "type": "error",
+#                             "title": "SQLMap Error",
+#                             "description": error_msg,
+#                             "severity": "error",
+#                             "tool": tool_name
+#                         })
+#                         tool_results[tool_name] = {"error": error_msg}
+#                         continue
+                    
+#                     payload = {
+#                         "url": url_target,
+#                         "batch": True,
+#                         "level": 1,
+#                         "risk": 1
+#                     }
+#                     print(f"[{datetime.now()}] Running {tool_name} against {url_target}")
+#                     print(f"  SQLMap payload: {payload}")
+                    
+#                 elif tool_name in url_based_tools:
+#                     # Web tools need http:// prefix
+#                     if not (target.startswith("http://") or target.startswith("https://")):
+#                         web_target = f"http://{target}"
+#                     else:
+#                         web_target = target
+#                     payload = {"target": web_target}
+#                     print(f"[{datetime.now()}] Running {tool_name} against {web_target}")
+                    
+#                 else:
+#                     # Normal tools (nmap, hydra, etc.) use target as-is
+#                     payload = {"target": target}
+#                     print(f"[{datetime.now()}] Running {tool_name} against {target}")
+                
+#                 try:
+#                     response = await client.post(
+#                         f"{settings.HEXSTRIKE_URL}/api/tools/{tool_name}",
+#                         json=payload,
+#                         timeout=180
+#                     )
+                    
+#                     if response.status_code == 200:
+#                         raw_result = response.json()
+#                         tool_results[tool_name] = raw_result
+                        
+#                         stdout = raw_result.get("stdout", "")
+#                         if not stdout:
+#                             stdout = str(raw_result)
+                        
+#                         # Use the target with http:// for findings display
+#                         display_target = web_target if tool_name in url_based_tools else target
+#                         findings = parse_findings(tool_name, display_target, stdout)
+                        
+#                         for finding in findings:
+#                             finding["tool"] = tool_name
+#                             all_findings.append(finding)
+                        
+#                         print(f"  Found {len(findings)} findings from {tool_name}")
+                        
+#                     else:
+#                         tool_results[tool_name] = {"error": f"HTTP {response.status_code}"}
+                        
+#                 except Exception as e:
+#                     print(f"Error running {tool_name}: {e}")
+#                     tool_results[tool_name] = {"error": str(e)}
+        
+#         progress_store[session_id] = {"status": "completed"}
+        
+#         session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
+#         if session:
+#             session.status = "completed"
+#             session.completed_at = datetime.utcnow()
+#             session.results_json = {
+#                 "tool_results": tool_results,
+#                 "formatted_findings": all_findings,
+#                 "tools_used": tools,
+#                 "target": target
+#             }
+        
+#         db.commit()
+#         print(f"Batch completed: {len(all_findings)} total findings")
+        
+#     except Exception as e:
+#         print(f"Batch error: {e}")
+#         session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
+#         if session:
+#             session.status = "failed"
+#             session.results_json = {"error": str(e)}
+#         db.commit()
+#         progress_store[session_id] = {"status": "failed", "error": str(e)}
+#     finally:
+#         db.close()
+
 async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int):
     from app.database import SessionLocal
     
     db = SessionLocal()
     all_findings = []
     tool_results = {}
+    
+    # Tool classifications - only special cases
+    # Make sure this list includes ALL web tools
+    needs_url_prefix = ["nikto", "gobuster", "nuclei", "wpscan", "whatweb", "dirb", "dirsearch", "ffuf", "wfuzz", "gau", "katana", "hakrawler", "http", "https"]
+    needs_url_param = ["sqlmap"]
+    needs_url_parameter = ["gobuster", "wpscan", "whatweb", "dirb", "dirsearch", "ffuf", "wfuzz"]
     
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
@@ -127,41 +256,78 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
                     "status": f"Running {tool_name} ({idx+1}/{len(tools)})"
                 }
                 
-                print(f"[{datetime.now()}] Running {tool_name} against {target}")
+                # Build target based on tool type
+                scan_target = target
+                if tool_name in needs_url_prefix:
+                    if not (target.startswith("http://") or target.startswith("https://")):
+                        scan_target = f"http://{target}"
+                    if scan_target.endswith('/'):
+                        scan_target = scan_target[:-1]
+                    print(f"  Converted target to: {scan_target}")
+                elif tool_name in needs_url_param:
+                    if not (target.startswith("http://") or target.startswith("https://")):
+                        scan_target = f"http://{target}"
+                    if '?' not in scan_target:
+                        error_msg = f"{tool_name} requires a URL with parameter (e.g., http://example.com/page.php?id=1)"
+                        all_findings.append({"type": "error", "title": f"{tool_name} Error", "description": error_msg, "severity": "error", "tool": tool_name})
+                        tool_results[tool_name] = {"error": error_msg}
+                        continue
+                
+                # Build payload (uniform for all tools)
+                if tool_name in needs_url_param:
+                   # payload = {"url": scan_target, "batch": True}
+                    payload = {"url": scan_target, "batch": True, "level": 1, "risk": 1}
+                elif tool_name in needs_url_parameter:
+                # Web tools that need 'url' parameter
+                    payload = {"url": scan_target}
+                else:
+                    payload = {"target": scan_target}
+                
+                print(f"[{datetime.now()}] Running {tool_name} against {scan_target}")
+                print(f"  Payload for {tool_name}: {payload}")
                 
                 try:
                     response = await client.post(
                         f"{settings.HEXSTRIKE_URL}/api/tools/{tool_name}",
-                        json={"target": target},
-                        timeout=180
+                        json=payload,
+                        timeout=600
                     )
                     
                     if response.status_code == 200:
                         raw_result = response.json()
                         tool_results[tool_name] = raw_result
                         
-                        stdout = raw_result.get("stdout", "")
-                        if not stdout:
-                            stdout = str(raw_result)
+                        # Get output (works for ALL tools)
+                        output = raw_result.get("stdout", "")
+                        if not output:
+                            output = raw_result.get("stderr", "")
+                        if not output:
+                            output = str(raw_result)
                         
-                        # Parse findings (without OpenAI to avoid internet dependency)
-                        findings = parse_findings(tool_name, target, stdout)
+                        # UNIVERSAL PARSER - works for ANY tool output
+                        findings = universal_parse_findings(tool_name, target, output)
                         
                         for finding in findings:
                             finding["tool"] = tool_name
                             all_findings.append(finding)
                         
-                        print(f"  Found {len(findings)} findings from {tool_name}")
-                        
+                        print(f"  Found {len(findings)} findings")
                     else:
                         tool_results[tool_name] = {"error": f"HTTP {response.status_code}"}
+                        all_findings.append({
+                            "type": "error", "title": f"{tool_name} failed", 
+                            "description": f"HTTP {response.status_code}", "severity": "error", "tool": tool_name
+                        })
                         
                 except Exception as e:
-                    print(f"Error running {tool_name}: {e}")
+                    print(f"Error: {e}")
                     tool_results[tool_name] = {"error": str(e)}
+                    all_findings.append({
+                        "type": "error", "title": f"{tool_name} error", 
+                        "description": str(e)[:200], "severity": "error", "tool": tool_name
+                    })
         
         progress_store[session_id] = {"status": "completed"}
-        
         session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
         if session:
             session.status = "completed"
@@ -172,9 +338,8 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
                 "tools_used": tools,
                 "target": target
             }
-        
         db.commit()
-        print(f"Batch completed: {len(all_findings)} total findings")
+        print(f"Batch completed: {len(all_findings)} findings")
         
     except Exception as e:
         print(f"Batch error: {e}")
@@ -183,82 +348,98 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
             session.status = "failed"
             session.results_json = {"error": str(e)}
         db.commit()
-        progress_store[session_id] = {"status": "failed", "error": str(e)}
     finally:
         db.close()
 
-def parse_findings(tool_name: str, target: str, stdout: str) -> list:
-    """Parse findings from tool output"""
+
+def universal_parse_findings(tool_name: str, target: str, output: str) -> list:
+    """Universal parser that works for ANY tool output"""
     findings = []
     
-    if not stdout:
-        return [{
-            "type": "error",
-            "title": "No Output Received",
-            "description": f"No output received from {tool_name}",
-            "severity": "warning"
-        }]
+    if not output or len(output) < 10:
+        return findings
     
-    # Check if host is up
-    if "Host is up" in stdout or "1 host up" in stdout:
+    lines = output.split('\n')
+    finding_lines = []
+    
+    # Collect lines that look like findings (common patterns across tools)
+    for line in lines:
+        line = line.strip()
+        if not line or len(line) < 5:
+            continue
+        
+        # Skip common non-finding lines
+        skip_patterns = [
+            "Starting", "Scanning", "Completed", "Summary", "Report", 
+            "Statistics", "---", "====", "Copyright", "License", "Usage",
+            "Options:", "Examples:", "Target IP:", "Target Hostname:", "Start Time:", "End Time:"
+        ]
+        if any(pattern.lower() in line.lower() for pattern in skip_patterns):
+            continue
+        
+        # Lines that likely contain findings (indicators of issues)
+        finding_indicators = [
+            "open", "vulnerable", "found", "detected", "discovered", "exposed",
+            "missing", "error", "warning", "critical", "high", "medium", "low",
+            "info", "cve", "exploit", "credentials", "password", "injection",
+            "xss", "sql", "directory", "file", "port", "service", "version"
+        ]
+        
+        if any(indicator in line.lower() for indicator in finding_indicators):
+            finding_lines.append(line)
+    
+    # Also capture lines with special prefixes
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Lines starting with +, -, *, >, # often contain findings
+        if line[0] in ['+', '-', '*', '>', '#'] and len(line) > 3:
+            if not any(p in line for p in ["--", "====", "----"]):
+                finding_lines.append(line[1:].strip())
+    
+    # Remove duplicates while preserving order
+    unique_lines = []
+    for line in finding_lines:
+        if line not in unique_lines:
+            unique_lines.append(line)
+    
+    # Create findings from unique lines
+    for line in unique_lines[:50]:  # Limit to 50 findings per tool
+        # Determine severity from content
+        severity = "info"
+        lower_line = line.lower()
+        if any(w in lower_line for w in ["critical", "cve-", "exploit", "credentials", "password", "injection", "rce", "remote code"]):
+            severity = "critical"
+        elif any(w in lower_line for w in ["high", "vulnerable", "xss", "sql", "overflow"]):
+            severity = "high"
+        elif any(w in lower_line for w in ["medium", "directory", "exposed", "information disclosure"]):
+            severity = "medium"
+        elif any(w in lower_line for w in ["low", "missing", "header"]):
+            severity = "low"
+        
+        # Truncate long lines
+        title = line[:80] + "..." if len(line) > 80 else line
+        
         findings.append({
-            "type": "host_status",
-            "title": "✅ Host is Reachable",
-            "description": f"Target {target} responded to the scan",
-            "severity": "success"
+            "type": "finding",
+            "title": title,
+            "description": line[:300],
+            "severity": severity,
+            "details": line
         })
     
-    # Parse open ports
-    port_pattern = re.compile(r'(\d+)/(tcp|udp)\s+open\s+(\S+)', re.IGNORECASE)
-    ports = port_pattern.findall(stdout)
-    for port, protocol, service in ports:
-        findings.append({
-            "type": "open_port",
-            "title": f"Open Port: {port}/{protocol}",
-            "description": f"Service '{service}' is running on port {port}/{protocol}",
-            "severity": "info",
-            "port": f"{port}/{protocol}",
-            "service": service
-        })
-    
-    # Parse service versions
-    version_pattern = re.compile(r'(\d+)/(tcp|udp)\s+open\s+(\S+)\s+(.+)', re.IGNORECASE)
-    versions = version_pattern.findall(stdout)
-    for port, protocol, service, version in versions:
-        for f in findings:
-            if f.get("port") == f"{port}/{protocol}":
-                f["version"] = version.strip()
-                f["description"] = f"Service '{service}' version '{version.strip()}' on port {port}/{protocol}"
-    
-    # Parse OS detection
-    os_pattern = re.compile(r'OS details?:?\s*(.+?)(?:\n|$)', re.IGNORECASE)
-    os_matches = os_pattern.findall(stdout)
-    for os_info in os_matches:
-        findings.append({
-            "type": "os_detection",
-            "title": "Operating System Detected",
-            "description": os_info.strip(),
-            "severity": "info",
-            "os": os_info.strip()
-        })
-    
-    # If no open ports but host is up
-    if len([f for f in findings if f.get("type") == "open_port"]) == 0 and "Host is up" in stdout:
-        findings.append({
-            "type": "no_open_ports",
-            "title": "No Open Ports Found",
-            "description": "Host is reachable but no open ports were discovered in the default scan range",
-            "severity": "warning"
-        })
-    
-    # Add summary
+    # Add summary if we have findings
     if findings:
-        open_ports_count = len([f for f in findings if f.get("type") == "open_port"])
+        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for f in findings:
+            severity_counts[f["severity"]] = severity_counts.get(f["severity"], 0) + 1
+        
         findings.insert(0, {
             "type": "scan_summary",
             "title": f"{tool_name.upper()} Scan Results",
-            "description": f"Host: {target} | Open Ports: {open_ports_count} | Total Findings: {len(findings)-1}",
-            "severity": "info"
+            "description": f"Found {len(findings)} issues (Critical: {severity_counts['critical']}, High: {severity_counts['high']}, Medium: {severity_counts['medium']}, Low: {severity_counts['low']}, Info: {severity_counts['info']})",
+            "severity": "success"
         })
     
     return findings
