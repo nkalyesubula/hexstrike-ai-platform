@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { BookOpen, Search, CheckCircle, AlertCircle, Award, Clock, Target, Shield, Zap, Code, Database, Server, Wifi, Key, Globe, Lock, Terminal, FileText, History } from 'lucide-react'
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar'
 import 'react-circular-progressbar/dist/styles.css'
+import Flashcards from '../components/Learning/Flashcards'
 
 function LearnPage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -290,7 +291,7 @@ function LearnPage() {
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid #333', flexWrap: 'wrap' }}>
-                {['overview', 'quiz', 'exercise', 'history', 'notes'].map(tab => (
+                {['overview', 'quiz', 'exercise', 'history', 'flashcards', 'notes'].map(tab => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -300,6 +301,7 @@ function LearnPage() {
                     {tab === 'quiz' && '📝 Quiz'}
                     {tab === 'exercise' && '🔬 Lab Exercise'}
                     {tab === 'history' && '📜 History'}
+                    {tab === 'flashcards' && '📚 Flashcards'}
                     {tab === 'notes' && '📝 Notes'}
                   </button>
                 ))}
@@ -448,7 +450,12 @@ function LearnPage() {
                   )}
                 </div>
               )}
-
+              {activeTab === 'flashcards' && (
+                <div style={{ background: '#16213e', borderRadius: '12px', padding: '30px' }}>
+                  <h3 style={{ fontSize: '20px', marginBottom: '20px', fontWeight: 'bold' }}>📚 Module Flashcards</h3>
+                  <Flashcards topic={selectedModule.name} />
+                </div>
+              )}
               {activeTab === 'notes' && (
                 <div style={{ background: '#16213e', borderRadius: '12px', padding: '30px' }}>
                   <h3 style={{ fontSize: '20px', marginBottom: '20px', fontWeight: 'bold' }}>📝 Study Notes</h3>

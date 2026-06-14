@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
 import logging
-from app.database import get_db, UserProgress, QuizAttempt, User
+from app.database import get_db, UserProgress, QuizAttempt, User, UserFlashcardProgress
 from app.routers.auth import get_current_user
 from app.services.learning_service import learning_service
 
@@ -40,6 +40,150 @@ async def get_modules(
             }
     
     return modules
+
+@router.get("/progress")
+async def get_learning_progress(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    progress_items = db.query(UserProgress).filter(
+        UserProgress.user_id == current_user.id
+    ).all()
+
+    return [
+        {
+            "module_id": item.module_id,
+            "completed": item.completed,
+            "score": item.score,
+            "last_accessed": item.last_accessed,
+            "metadata": item.metadata_json or {}
+        }
+        for item in progress_items
+    ]
+
+@router.post("/progress")
+async def update_learning_progress(
+    progress: Dict[str, Any] = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    module_id = str(progress.get("module_id", "")).strip()
+    if not module_id:
+        raise HTTPException(status_code=400, detail="module_id is required")
+
+    existing = db.query(UserProgress).filter(
+        UserProgress.user_id == current_user.id,
+        UserProgress.module_id == module_id
+    ).first()
+
+    if existing:
+        existing.completed = bool(progress.get("completed", existing.completed))
+        existing.score = int(round(float(progress.get("score", existing.score or 0))))
+        existing.metadata_json = progress.get("metadata", existing.metadata_json or {})
+        existing.last_accessed = datetime.utcnow()
+    else:
+        existing = UserProgress(
+            user_id=current_user.id,
+            module_id=module_id,
+            completed=bool(progress.get("completed", False)),
+            score=int(round(float(progress.get("score", 0)))),
+            metadata_json=progress.get("metadata", {}),
+            last_accessed=datetime.utcnow()
+        )
+        db.add(existing)
+
+    db.commit()
+    db.refresh(existing)
+    return {
+        "module_id": existing.module_id,
+        "completed": existing.completed,
+        "score": existing.score,
+        "last_accessed": existing.last_accessed,
+        "metadata": existing.metadata_json or {}
+    }
+
+@router.get("/quiz/generate")
+async def generate_quiz(
+    topic: str = Query(...),
+    difficulty: str = Query("intermediate"),
+    current_user: User = Depends(get_current_user)
+):
+    modules = learning_service.get_all_modules()
+    normalized_topic = topic.replace("-", " ").lower()
+    normalized_difficulty = difficulty.lower()
+
+    module = next(
+        (
+            item for item in modules
+            if item["name"].lower() == normalized_topic
+            or item.get("category", "").lower() == normalized_topic
+            or normalized_topic in item["name"].lower()
+        ),
+        None
+    )
+    if module is None:
+        module = next(
+            (item for item in modules if item.get("difficulty", "").lower() == normalized_difficulty),
+            modules[0] if modules else None
+        )
+
+    if module is None:
+        raise HTTPException(status_code=404, detail="No quiz content is available")
+
+    questions = [
+        {
+            "id": index + 1,
+            "question": question["question"],
+            "options": question["options"],
+            "correct": question["correct"],
+            "explanation": question["explanation"]
+        }
+        for index, question in enumerate(module.get("quiz_questions", []))
+    ]
+
+    return {
+        "title": module["name"],
+        "description": module["description"],
+        "topic": module["category"],
+        "difficulty": module["difficulty"],
+        "questions": questions,
+        "passing_score": 70,
+        "time_limit": max(len(questions), 1) * 120
+    }
+
+@router.post("/quiz/submit")
+async def submit_generated_quiz(
+    submission: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    score = int(submission.get("score", 0))
+    total = int(submission.get("total", 0))
+    if total < 1:
+        raise HTTPException(status_code=400, detail="total must be greater than zero")
+
+    attempt = QuizAttempt(
+        user_id=current_user.id,
+        quiz_id=str(submission.get("quiz_id", f"quiz_{datetime.utcnow().timestamp()}")),
+        score=score,
+        total_questions=total,
+        answers_json={
+            "answers": submission.get("answers", []),
+            "submitted_at": datetime.utcnow().isoformat()
+        },
+        completed_at=datetime.utcnow()
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    return {
+        "id": attempt.id,
+        "score": attempt.score,
+        "total": attempt.total_questions,
+        "percentage": (attempt.score / attempt.total_questions) * 100,
+        "completed_at": attempt.completed_at
+    }
 
 @router.get("/modules/{module_id}")
 async def get_module(
@@ -209,3 +353,58 @@ async def get_quiz_history(
         }
         for h in history
     ]
+
+@router.get("/flashcards/{topic}")
+async def get_flashcards(
+    topic: str,
+    count: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user)
+):
+    """Get flashcards for a learning module topic."""
+    try:
+        return learning_service.get_flashcards(topic, count)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Flashcards not found for this topic")
+
+@router.post("/flashcards/review")
+async def review_flashcard(
+    review: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Store the user's latest mastery rating for a flashcard."""
+    card_id = review.get("card_id")
+    difficulty_rating = review.get("difficulty_rating")
+
+    if card_id is None or difficulty_rating is None:
+        raise HTTPException(status_code=400, detail="card_id and difficulty_rating are required")
+
+    try:
+        card_id = int(card_id)
+        difficulty_rating = int(difficulty_rating)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="card_id and difficulty_rating must be numbers")
+
+    existing = db.query(UserFlashcardProgress).filter(
+        UserFlashcardProgress.user_id == current_user.id,
+        UserFlashcardProgress.flashcard_id == card_id
+    ).first()
+
+    if existing:
+        existing.mastery_level = difficulty_rating
+        existing.last_reviewed = datetime.utcnow()
+    else:
+        db.add(UserFlashcardProgress(
+            user_id=current_user.id,
+            flashcard_id=card_id,
+            mastery_level=difficulty_rating,
+            last_reviewed=datetime.utcnow()
+        ))
+
+    db.commit()
+
+    return {
+        "card_id": card_id,
+        "mastery_level": difficulty_rating,
+        "last_reviewed": datetime.utcnow()
+    }
