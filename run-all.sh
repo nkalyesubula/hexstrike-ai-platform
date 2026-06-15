@@ -1,50 +1,55 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ─────────────────────────────────────────────
+# PATH SETUP
+# ─────────────────────────────────────────────
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 HEXSTRIKE_SERVER_DIR="$ROOT_DIR/../hexstrike-server"
 
-# Store service process group IDs. Each one starts as the PID of the
-# service session leader, but cleanup targets the group even if that
-# leader exits before one of its children.
 pgids=()
 cleaned_up=false
 
-check_file() {
-  local path="$1"
+# ─────────────────────────────────────────────
+# UTILITIES
+# ─────────────────────────────────────────────
 
-  if [[ ! -f "$path" ]]; then
-    echo "Missing required file: $path" >&2
+check_file() {
+  [[ -f "$1" ]] || {
+    echo "Missing required file: $1" >&2
     exit 1
-  fi
+  }
 }
 
-check_port_free() {
+kill_port_user() {
   local name="$1"
   local port="$2"
 
-  if command -v ss >/dev/null 2>&1; then
-    if ss -ltn "sport = :$port" 2>/dev/null | tail -n +2 | grep -q .; then
-      echo "$name port $port is already in use." >&2
-      echo "Stop the existing process, then run this script again." >&2
-      exit 1
-    fi
-    return
-  fi
+  echo "Checking $name on port $port..."
+
+  local pids=""
 
   if command -v lsof >/dev/null 2>&1; then
-    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-      echo "$name port $port is already in use." >&2
-      echo "Stop the existing process, then run this script again." >&2
-      exit 1
-    fi
+    pids=$(lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+  elif command -v ss >/dev/null 2>&1; then
+    pids=$(ss -ltnp "sport = :$port" 2>/dev/null \
+      | awk -F'pid=' '/pid=/{split($2,a,","); print a[1]}' \
+      | sort -u)
+  fi
+
+  if [[ -n "${pids:-}" ]]; then
+    echo "Killing existing $name processes on port $port: $pids"
+    kill -TERM $pids 2>/dev/null || true
+    sleep 1
+    kill -KILL $pids 2>/dev/null || true
+  else
+    echo "No existing process on port $port"
   fi
 }
 
 cleanup() {
-  # Prevent cleanup from running twice (INT + EXIT)
   if [[ "$cleaned_up" == true ]]; then
     return
   fi
@@ -53,25 +58,16 @@ cleanup() {
   echo
   echo "Stopping services..."
 
-  # Gracefully terminate entire service process groups.
   for pgid in "${pgids[@]:-}"; do
-    if kill -0 -- "-$pgid" 2>/dev/null; then
-      kill -TERM -- "-$pgid" 2>/dev/null || true
-    fi
+    kill -TERM -- "-$pgid" 2>/dev/null || true
   done
 
-  # Give processes a short moment to exit cleanly
   sleep 1
 
-  # Force kill any remaining processes
   for pgid in "${pgids[@]:-}"; do
-    if kill -0 -- "-$pgid" 2>/dev/null; then
-      kill -KILL -- "-$pgid" 2>/dev/null || true
-    fi
+    kill -KILL -- "-$pgid" 2>/dev/null || true
   done
 
-  # Reap only the service session leaders. Avoid a bare wait here because
-  # process-substitution loggers are also shell children on some bash versions.
   for pgid in "${pgids[@]:-}"; do
     wait "$pgid" 2>/dev/null || true
   done
@@ -89,35 +85,48 @@ start_service() {
 
   echo "Starting $name..."
 
-  # Start the service in a new session/process group so we can kill the
-  # service and all of its children together. Keep sed outside that group:
-  # it will exit as soon as the service closes its stdout/stderr.
   setsid bash -c '
     cd "$1"
     shift
     exec "$@"
-  ' _ "$dir" "$@" > >(sed -u "s/^/[$name] /") 2>&1 &
+  ' _ "$dir" "$@" \
+    > >(sed -u "s/^/[$name] /") \
+    2>&1 &
 
   local pid=$!
   pgids+=("$pid")
 }
 
+# ─────────────────────────────────────────────
+# TRAPS
+# ─────────────────────────────────────────────
 trap handle_signal INT TERM
 trap cleanup EXIT
 
-# Validate required files
+# ─────────────────────────────────────────────
+# VALIDATION
+# ─────────────────────────────────────────────
+
 check_file "$BACKEND_DIR/venv/bin/activate"
 check_file "$BACKEND_DIR/run.py"
 check_file "$HEXSTRIKE_SERVER_DIR/venv/bin/activate"
 check_file "$HEXSTRIKE_SERVER_DIR/hexstrike_server.py"
 check_file "$FRONTEND_DIR/package.json"
 
-# Validate expected ports before starting anything.
-check_port_free "backend" 8000
-check_port_free "hexstrike-server" 8888
-check_port_free "frontend" 5173
+# ─────────────────────────────────────────────
+# AUTO-FREE PORTS (SELF-HEALING)
+# ─────────────────────────────────────────────
 
-# Initialize database if it doesn't exist
+kill_port_user "backend" 8000
+kill_port_user "hexstrike-server" 8888
+kill_port_user "frontend" 5173
+
+sleep 1
+
+# ─────────────────────────────────────────────
+# DB INIT
+# ─────────────────────────────────────────────
+
 if [[ ! -f "$BACKEND_DIR/hexstrike.db" ]]; then
   echo "Initializing backend database..."
   (
@@ -127,7 +136,10 @@ if [[ ! -f "$BACKEND_DIR/hexstrike.db" ]]; then
   )
 fi
 
-# Start services
+# ─────────────────────────────────────────────
+# START SERVICES
+# ─────────────────────────────────────────────
+
 start_service \
   "backend" \
   "$BACKEND_DIR" \
@@ -144,7 +156,7 @@ start_service \
   npm run dev -- --host 0.0.0.0 --port 5173
 
 echo
-echo "All services started. Press Ctrl+C to stop them."
+echo "All services started. Press Ctrl+C to stop."
 
-# Exit if any service stops unexpectedly
-wait -n "${pgids[@]}"
+# Wait for any service to exit unexpectedly
+wait -n "${pgids[@]}" || true

@@ -46,6 +46,25 @@ def serialize_tool_calls(tool_calls: list[Dict[str, Any]]) -> list[Dict[str, Any
         serialized.append(next_call)
     return serialized
 
+def build_tool_payload(tool_name: str, target: str, tool_parameters: Dict[str, Any]) -> Dict[str, Any]:
+    payload = {"target": target, **(tool_parameters or {})}
+
+    if tool_name == "gobuster":
+        payload.setdefault("url", f"http://{target}")
+        payload.setdefault("mode", "dir")
+        payload.setdefault("wordlist", "/usr/share/wordlists/dirb/common.txt")
+    elif tool_name == "nikto":
+        payload["target"] = tool_parameters.get("target") or f"http://{target}"
+    elif tool_name == "hydra":
+        payload.setdefault("service", "ssh")
+    elif tool_name == "enum4linux-ng":
+        payload.setdefault("shares", True)
+        payload.setdefault("users", True)
+        payload.setdefault("groups", True)
+        payload.setdefault("policy", True)
+
+    return payload
+
 def build_initial_results(target: str, tools: list[str], parameters: Dict[str, Dict[str, Any]] | None = None) -> Dict[str, Any]:
     parameters = parameters or {}
     return {
@@ -335,6 +354,7 @@ async def execute_batch_background(
                 
                 print(f"[{datetime.now()}] Running {tool_name} against {target}")
                 tool_started_at = datetime.utcnow()
+                request_payload = build_tool_payload(tool_name, target, tool_parameters)
                 session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
                 if session:
                     current_results = session.results_json or build_initial_results(target, tools, parameters)
@@ -342,17 +362,24 @@ async def execute_batch_background(
                         current_results,
                         tool_name,
                         status="running",
-                        parameters=tool_parameters,
+                        parameters=request_payload,
                         started_at=serialize_utc(tool_started_at),
                         error=None
                     )
                     db.commit()
                 
                 try:
+                    tool_timeout = {
+                        "gobuster": 300,
+                        "nikto": 300,
+                        "hydra": 900,
+                        "enum4linux-ng": 300
+                    }.get(tool_name, 300)
+
                     response = await client.post(
                         f"{settings.HEXSTRIKE_URL}/api/tools/{tool_name}",
-                        json={"target": target, "parameters": tool_parameters},
-                        timeout=180
+                        json=request_payload,
+                        timeout=tool_timeout
                     )
                     
                     if response.status_code == 200:
@@ -526,6 +553,62 @@ def parse_findings(tool_name: str, target: str, stdout: str) -> list:
             "severity": "info",
             "os": os_info.strip()
         })
+
+    if tool_name == "gobuster":
+        path_pattern = re.compile(r'^(?:Found:\s*)?(https?://\S+|/\S+)\s+\(Status:\s*(\d+)\)', re.IGNORECASE | re.MULTILINE)
+        for path, status in path_pattern.findall(stdout):
+            findings.append({
+                "type": "web_path",
+                "title": f"Discovered Web Path ({status})",
+                "description": path.strip(),
+                "severity": "info",
+                "status_code": status
+            })
+
+    if tool_name == "nikto":
+        for line in stdout.splitlines():
+            clean_line = line.strip()
+            if clean_line.startswith("+") and not clean_line.lower().startswith("+ target"):
+                severity = "warning" if any(token in clean_line.lower() for token in ["osvdb", "cve", "vulnerab", "allowed", "outdated"]) else "info"
+                findings.append({
+                    "type": "web_vulnerability",
+                    "title": "Nikto Finding",
+                    "description": clean_line.lstrip("+ ").strip(),
+                    "severity": severity
+                })
+
+    if tool_name == "enum4linux-ng":
+        share_pattern = re.compile(r'\b([A-Za-z0-9_$.-]+)\s+(?:Disk|IPC|Printer)\b', re.IGNORECASE)
+        for share in sorted(set(share_pattern.findall(stdout))):
+            findings.append({
+                "type": "smb_share",
+                "title": f"SMB Share Found: {share}",
+                "description": f"Enum4linux-ng reported SMB share '{share}' on {target}",
+                "severity": "info",
+                "share": share
+            })
+
+        user_pattern = re.compile(r'\buser:\[([^\]]+)\]', re.IGNORECASE)
+        for user in sorted(set(user_pattern.findall(stdout))):
+            findings.append({
+                "type": "smb_user",
+                "title": f"SMB User Found: {user}",
+                "description": f"Enum4linux-ng reported SMB user '{user}'",
+                "severity": "info",
+                "user": user
+            })
+
+    if tool_name == "hydra":
+        credential_pattern = re.compile(r'login:\s*(\S+)\s+password:\s*(\S+)', re.IGNORECASE)
+        for username, password in credential_pattern.findall(stdout):
+            findings.append({
+                "type": "credential",
+                "title": f"Valid Credential Found: {username}",
+                "description": f"Hydra found valid credentials for {target}: {username}/{password}",
+                "severity": "high",
+                "username": username,
+                "password": password
+            })
     
     # If no open ports but host is up
     if len([f for f in findings if f.get("type") == "open_port"]) == 0 and "Host is up" in stdout:
