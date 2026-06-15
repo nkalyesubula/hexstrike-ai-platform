@@ -27,5 +27,15 @@ export const toolService = {
   getHistory: async (limit = 10) => {
     const response = await api.get(`/api/tools/history?limit=${limit}`)
     return response.data
+  },
+
+  deleteSession: async (sessionId) => {
+    const response = await api.delete(`/api/tools/session/${sessionId}`)
+    return response.data
+  },
+
+  clearHistory: async () => {
+    const response = await api.delete('/api/tools/history')
+    return response.data
   }
 }

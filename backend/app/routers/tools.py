@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 import httpx
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from app.database import get_db, PentestSession, User
 from app.routers.auth import get_current_user
@@ -23,6 +23,28 @@ class ToolExecutionRequest(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 progress_store = {}
+
+def serialize_utc(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace("+00:00", "Z")
+    if isinstance(value, str) and "T" in value and not value.endswith("Z") and "+" not in value[10:] and "-" not in value[10:]:
+        return f"{value}Z"
+    return value
+
+def serialize_tool_calls(tool_calls: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    serialized = []
+    for call in tool_calls:
+        next_call = dict(call)
+        next_call["started_at"] = serialize_utc(next_call.get("started_at"))
+        next_call["completed_at"] = serialize_utc(next_call.get("completed_at"))
+        serialized.append(next_call)
+    return serialized
 
 def build_initial_results(target: str, tools: list[str], parameters: Dict[str, Dict[str, Any]] | None = None) -> Dict[str, Any]:
     parameters = parameters or {}
@@ -199,14 +221,19 @@ async def get_session_status(
         session.results_json = results
         db.commit()
     
+    tool_calls = serialize_tool_calls(results.get("tool_calls", []))
+    if results.get("tool_calls"):
+        results = dict(results)
+        results["tool_calls"] = tool_calls
+
     return {
         "id": session.id,
         "target": session.target,
         "status": session.status,
-        "started_at": session.started_at,
-        "completed_at": session.completed_at,
+        "started_at": serialize_utc(session.started_at),
+        "completed_at": serialize_utc(session.completed_at),
         "results": results,
-        "tool_calls": results.get("tool_calls", []),
+        "tool_calls": tool_calls,
         "tools_used": results.get("tools_used", []),
         "formatted_findings": results.get("formatted_findings", []),
         "findings_count": len(results.get("formatted_findings", [])),
@@ -228,14 +255,53 @@ async def get_execution_history(
             "id": s.id,
             "target": s.target,
             "status": s.status,
-            "started_at": s.started_at,
-            "completed_at": s.completed_at,
+            "started_at": serialize_utc(s.started_at),
+            "completed_at": serialize_utc(s.completed_at),
             "tools_used": s.results_json.get("tools_used", []) if s.results_json else [],
             "tool_count": len(s.results_json.get("tools_used", [])) if s.results_json else 0,
             "findings_count": len(s.results_json.get("formatted_findings", [])) if s.results_json else 0
         }
         for s in sessions
     ]
+
+@router.delete("/session/{session_id}")
+async def delete_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    session = db.query(PentestSession).filter(
+        PentestSession.id == session_id,
+        PentestSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    db.delete(session)
+    db.commit()
+    progress_store.pop(session_id, None)
+    return {"success": True, "deleted_session_id": session_id}
+
+@router.delete("/history")
+async def clear_execution_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    sessions = db.query(PentestSession).filter(
+        PentestSession.user_id == current_user.id
+    ).all()
+    deleted_count = len(sessions)
+    session_ids = [session.id for session in sessions]
+
+    for session in sessions:
+        db.delete(session)
+
+    db.commit()
+    for session_id in session_ids:
+        progress_store.pop(session_id, None)
+
+    return {"success": True, "deleted_count": deleted_count}
 
 async def execute_batch_background(
     tools: list,
@@ -277,7 +343,7 @@ async def execute_batch_background(
                         tool_name,
                         status="running",
                         parameters=tool_parameters,
-                        started_at=tool_started_at.isoformat(),
+                        started_at=serialize_utc(tool_started_at),
                         error=None
                     )
                     db.commit()
@@ -317,7 +383,7 @@ async def execute_batch_background(
                                 current_results,
                                 tool_name,
                                 status="completed",
-                                completed_at=completed_at.isoformat(),
+                                completed_at=serialize_utc(completed_at),
                                 duration_seconds=round((completed_at - tool_started_at).total_seconds(), 2),
                                 http_status=response.status_code,
                                 findings_count=len(findings),
@@ -341,7 +407,7 @@ async def execute_batch_background(
                                 current_results,
                                 tool_name,
                                 status="failed",
-                                completed_at=completed_at.isoformat(),
+                                completed_at=serialize_utc(completed_at),
                                 duration_seconds=round((completed_at - tool_started_at).total_seconds(), 2),
                                 http_status=response.status_code,
                                 findings_count=0,
@@ -366,7 +432,7 @@ async def execute_batch_background(
                             current_results,
                             tool_name,
                             status="failed",
-                            completed_at=completed_at.isoformat(),
+                            completed_at=serialize_utc(completed_at),
                             duration_seconds=round((completed_at - tool_started_at).total_seconds(), 2),
                             findings_count=0,
                             error=error

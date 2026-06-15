@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Award, Brain, Target, TrendingUp, Bug, Activity, Eye } from 'lucide-react'
+import { Award, Brain, Target, TrendingUp, Bug, Activity, Eye, Trash2 } from 'lucide-react'
+import { toolService } from '../services/toolService'
 
 function DashboardPage() {
   const [stats, setStats] = useState(null)
@@ -40,6 +41,37 @@ function DashboardPage() {
       console.error('Error fetching dashboard data:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const formatLocalDate = (value) => {
+    if (!value) return 'Not recorded'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'Not recorded'
+    return date.toLocaleDateString()
+  }
+
+  const deleteSession = async (sessionId) => {
+    if (!window.confirm('Remove this pentest session?')) return
+
+    try {
+      await toolService.deleteSession(sessionId)
+      await fetchDashboardData()
+    } catch (err) {
+      console.error('Error deleting session:', err)
+      window.alert('Failed to remove pentest session.')
+    }
+  }
+
+  const clearHistory = async () => {
+    if (!window.confirm('Clear all pentest session history?')) return
+
+    try {
+      await toolService.clearHistory()
+      await fetchDashboardData()
+    } catch (err) {
+      console.error('Error clearing history:', err)
+      window.alert('Failed to clear pentest session history.')
     }
   }
 
@@ -112,9 +144,30 @@ function DashboardPage() {
         borderRadius: '10px',
         marginBottom: '30px'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
           <h3>Recent Pentest Sessions</h3>
-          <Activity size={20} color="#6c63ff" />
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {recentSessions.length > 0 && (
+              <button
+                onClick={clearHistory}
+                title="Clear all pentest session history"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: '#ef444420',
+                  color: '#fca5a5',
+                  border: '1px solid #ef444455',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  cursor: 'pointer'
+                }}
+              >
+                <Trash2 size={16} /> Clear
+              </button>
+            )}
+            <Activity size={20} color="#6c63ff" />
+          </div>
         </div>
         
         {recentSessions.length === 0 ? (
@@ -137,7 +190,7 @@ function DashboardPage() {
                 {recentSessions.map(session => (
                   <tr key={session.id} style={{ borderBottom: '1px solid #333' }}>
                     <td style={{ padding: '10px' }}>{session.target}</td>
-                    <td style={{ padding: '10px' }}>{new Date(session.started_at).toLocaleDateString()}</td>
+                    <td style={{ padding: '10px' }}>{formatLocalDate(session.started_at)}</td>
                     <td style={{ padding: '10px' }}>
                       <span style={{
                         background: session.findings_count > 0 ? '#ef444420' : '#10b98120',
@@ -179,6 +232,25 @@ function DashboardPage() {
                       >
                         <Eye size={17} />
                       </Link>
+                      <button
+                        onClick={() => deleteSession(session.id)}
+                        title="Remove session"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '34px',
+                          height: '34px',
+                          color: '#fca5a5',
+                          background: '#ef444420',
+                          border: '1px solid #ef444455',
+                          borderRadius: '8px',
+                          marginLeft: '8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
