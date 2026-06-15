@@ -11,6 +11,7 @@ import { useAuth } from "./hooks/useAuth";
 
 // Lazy load components
 const Dashboard = lazy(() => import("./pages/DashboardPage"));
+const PentestSessionDetailPage = lazy(() => import("./pages/PentestSessionDetailPage"));
 const LabPage = lazy(() => import("./pages/LabPage"));
 const LearnPage = lazy(() => import("./pages/LearnPage"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
@@ -105,6 +106,11 @@ function AppContent() {
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/dashboard/sessions/:sessionId" element={
+            <ProtectedRoute>
+              <PentestSessionDetailPage />
             </ProtectedRoute>
           } />
           <Route path="/lab" element={

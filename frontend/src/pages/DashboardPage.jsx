@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Award, Brain, Target, TrendingUp, Bug, Activity, Clock, Shield, AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Award, Brain, Target, TrendingUp, Bug, Activity, Eye } from 'lucide-react'
 
 function DashboardPage() {
   const [stats, setStats] = useState(null)
@@ -129,6 +130,7 @@ function DashboardPage() {
                   <th style={{ padding: '10px' }}>Date</th>
                   <th style={{ padding: '10px' }}>Findings</th>
                   <th style={{ padding: '10px' }}>Status</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -157,6 +159,26 @@ function DashboardPage() {
                       }}>
                         {session.status}
                       </span>
+                    </td>
+                    <td style={{ padding: '10px', textAlign: 'right' }}>
+                      <Link
+                        to={`/dashboard/sessions/${session.id}`}
+                        title="View session details"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '34px',
+                          height: '34px',
+                          color: '#c7d2fe',
+                          background: '#6c63ff20',
+                          border: '1px solid #6c63ff55',
+                          borderRadius: '8px',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <Eye size={17} />
+                      </Link>
                     </td>
                   </tr>
                 ))}
