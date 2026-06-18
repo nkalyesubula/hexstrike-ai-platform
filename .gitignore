@@ -27,3 +27,5 @@ build/
 .prettierrc
 hexstrike.db*.db
 hexstrike.db
+*.db
+hexstrike.db
