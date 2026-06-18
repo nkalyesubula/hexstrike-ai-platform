@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 import httpx
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from app.database import get_db, PentestSession, User
 from app.routers.auth import get_current_user
@@ -23,6 +23,96 @@ class ToolExecutionRequest(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 progress_store = {}
+
+def serialize_utc(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat().replace("+00:00", "Z")
+    if isinstance(value, str) and "T" in value and not value.endswith("Z") and "+" not in value[10:] and "-" not in value[10:]:
+        return f"{value}Z"
+    return value
+
+def serialize_tool_calls(tool_calls: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    serialized = []
+    for call in tool_calls:
+        next_call = dict(call)
+        next_call["started_at"] = serialize_utc(next_call.get("started_at"))
+        next_call["completed_at"] = serialize_utc(next_call.get("completed_at"))
+        serialized.append(next_call)
+    return serialized
+
+def build_initial_results(target: str, tools: list[str], parameters: Dict[str, Dict[str, Any]] | None = None) -> Dict[str, Any]:
+    parameters = parameters or {}
+    return {
+        "target": target,
+        "tools_used": tools,
+        "parameters": parameters,
+        "tool_results": {},
+        "tool_calls": [
+            {
+                "tool": tool,
+                "status": "queued",
+                "parameters": parameters.get(tool, {}),
+                "started_at": None,
+                "completed_at": None,
+                "duration_seconds": None,
+                "http_status": None,
+                "findings_count": 0,
+                "error": None
+            }
+            for tool in tools
+        ],
+        "formatted_findings": []
+    }
+
+def update_tool_call(results: Dict[str, Any], tool_name: str, **updates) -> Dict[str, Any]:
+    next_results = dict(results or {})
+    calls = list(next_results.get("tool_calls") or [])
+    for idx, call in enumerate(calls):
+        if call.get("tool") == tool_name:
+            calls[idx] = {**call, **updates}
+            break
+    else:
+        calls.append({
+            "tool": tool_name,
+            "status": "queued",
+            "parameters": (next_results.get("parameters") or {}).get(tool_name, {}),
+            "started_at": None,
+            "completed_at": None,
+            "duration_seconds": None,
+            "http_status": None,
+            "findings_count": 0,
+            "error": None,
+            **updates
+        })
+
+    next_results["tool_calls"] = calls
+    return next_results
+
+def derive_tool_calls(results: Dict[str, Any]) -> list[Dict[str, Any]]:
+    tool_results = results.get("tool_results") or {}
+    parameters = results.get("parameters") or {}
+    findings = results.get("formatted_findings") or []
+
+    return [
+        {
+            "tool": tool,
+            "status": "failed" if isinstance(data, dict) and data.get("error") else "completed",
+            "parameters": parameters.get(tool, {}),
+            "started_at": None,
+            "completed_at": None,
+            "duration_seconds": None,
+            "http_status": None,
+            "findings_count": len([finding for finding in findings if finding.get("tool") == tool]),
+            "error": data.get("error") if isinstance(data, dict) else None
+        }
+        for tool, data in tool_results.items()
+    ]
 
 @router.get("/available")
 async def get_available_tools():
@@ -44,7 +134,8 @@ async def execute_batch(
         user_id=current_user.id,
         target=request.target,
         status="running",
-        started_at=datetime.utcnow()
+        started_at=datetime.utcnow(),
+        results_json=build_initial_results(request.target, request.tools, request.parameters)
     )
     db.add(session)
     db.commit()
@@ -79,7 +170,12 @@ async def execute_tool(
         user_id=current_user.id,
         target=request.target,
         status="running",
-        started_at=datetime.utcnow()
+        started_at=datetime.utcnow(),
+        results_json=build_initial_results(
+            request.target,
+            [tool_name],
+            {tool_name: request.parameters}
+        )
     )
     db.add(session)
     db.commit()
@@ -119,14 +215,28 @@ async def get_session_status(
     
     progress = progress_store.get(session_id, {})
     results = session.results_json or {}
+    if results.get("tool_results") and not results.get("tool_calls"):
+        results = dict(results)
+        results["tool_calls"] = derive_tool_calls(results)
+        session.results_json = results
+        db.commit()
     
+    tool_calls = serialize_tool_calls(results.get("tool_calls", []))
+    if results.get("tool_calls"):
+        results = dict(results)
+        results["tool_calls"] = tool_calls
+
     return {
         "id": session.id,
+        "target": session.target,
         "status": session.status,
-        "started_at": session.started_at,
-        "completed_at": session.completed_at,
+        "started_at": serialize_utc(session.started_at),
+        "completed_at": serialize_utc(session.completed_at),
         "results": results,
+        "tool_calls": tool_calls,
+        "tools_used": results.get("tools_used", []),
         "formatted_findings": results.get("formatted_findings", []),
+        "findings_count": len(results.get("formatted_findings", [])),
         "progress": progress
     }
 
@@ -145,19 +255,67 @@ async def get_execution_history(
             "id": s.id,
             "target": s.target,
             "status": s.status,
-            "started_at": s.started_at,
-            "completed_at": s.completed_at,
+            "started_at": serialize_utc(s.started_at),
+            "completed_at": serialize_utc(s.completed_at),
+            "tools_used": s.results_json.get("tools_used", []) if s.results_json else [],
+            "tool_count": len(s.results_json.get("tools_used", [])) if s.results_json else 0,
             "findings_count": len(s.results_json.get("formatted_findings", [])) if s.results_json else 0
         }
         for s in sessions
     ]
 
-async def execute_batch_background(tools: list, target: str, session_id: int, user_id: int, parameters: dict = None):
+@router.delete("/session/{session_id}")
+async def delete_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    session = db.query(PentestSession).filter(
+        PentestSession.id == session_id,
+        PentestSession.user_id == current_user.id
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    db.delete(session)
+    db.commit()
+    progress_store.pop(session_id, None)
+    return {"success": True, "deleted_session_id": session_id}
+
+@router.delete("/history")
+async def clear_execution_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    sessions = db.query(PentestSession).filter(
+        PentestSession.user_id == current_user.id
+    ).all()
+    deleted_count = len(sessions)
+    session_ids = [session.id for session in sessions]
+
+    for session in sessions:
+        db.delete(session)
+
+    db.commit()
+    for session_id in session_ids:
+        progress_store.pop(session_id, None)
+
+    return {"success": True, "deleted_count": deleted_count}
+
+async def execute_batch_background(
+    tools: list,
+    target: str,
+    session_id: int,
+    user_id: int,
+    parameters: Dict[str, Dict[str, Any]] | None = None
+):
     from app.database import SessionLocal
     
     db = SessionLocal()
     all_findings = []
     tool_results = {}
+    parameters = parameters or {}
     
     # Tool classifications - only special cases
     # Make sure this list includes ALL web tools
@@ -182,9 +340,14 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
     ]
     
     try:
+        session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
+        if session and not session.results_json:
+            session.results_json = build_initial_results(target, tools, parameters)
+            db.commit()
+
         async with httpx.AsyncClient(timeout=300.0) as client:
             for idx, tool_name in enumerate(tools):
-                tool_parameters = (parameters or {}).get(tool_name, {})
+                tool_parameters = parameters.get(tool_name, {})
                 progress_store[session_id] = {
                     "current_tool": idx,
                     "total_tools": len(tools),
@@ -221,6 +384,19 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
                 
                 print(f"[{datetime.now()}] Running {tool_name} against {scan_target}")
                 print(f"  Payload for {tool_name}: {payload}")
+                tool_started_at = datetime.utcnow()
+                session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
+                if session:
+                    current_results = session.results_json or build_initial_results(target, tools, parameters)
+                    session.results_json = update_tool_call(
+                        current_results,
+                        tool_name,
+                        status="running",
+                        parameters=tool_parameters,
+                        started_at=serialize_utc(tool_started_at),
+                        error=None
+                    )
+                    db.commit()
                 
                 try:
                     response = await client.post(
@@ -247,34 +423,91 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
                             finding["tool"] = tool_name
                             all_findings.append(finding)
                         
-                        print(f"  Found {len(findings)} findings")
+                        print(f"  Found {len(findings)} findings from {tool_name}")
+                        completed_at = datetime.utcnow()
+                        session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
+                        if session:
+                            current_results = dict(session.results_json or build_initial_results(target, tools, parameters))
+                            current_tool_results = dict(current_results.get("tool_results") or {})
+                            current_tool_results[tool_name] = raw_result
+                            current_results["tool_results"] = current_tool_results
+                            current_results["formatted_findings"] = all_findings
+                            current_results = update_tool_call(
+                                current_results,
+                                tool_name,
+                                status="completed",
+                                completed_at=serialize_utc(completed_at),
+                                duration_seconds=round((completed_at - tool_started_at).total_seconds(), 2),
+                                http_status=response.status_code,
+                                findings_count=len(findings),
+                                error=None
+                            )
+                            session.results_json = current_results
+                            db.commit()
+                        
                     else:
-                        tool_results[tool_name] = {"error": f"HTTP {response.status_code}"}
-                        all_findings.append({
-                            "type": "error", "title": f"{tool_name} failed", 
-                            "description": f"HTTP {response.status_code}", "severity": "error", "tool": tool_name
-                        })
+                        error = f"HTTP {response.status_code}"
+                        tool_results[tool_name] = {"error": error}
+                        completed_at = datetime.utcnow()
+                        session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
+                        if session:
+                            current_results = dict(session.results_json or build_initial_results(target, tools, parameters))
+                            current_tool_results = dict(current_results.get("tool_results") or {})
+                            current_tool_results[tool_name] = {"error": error}
+                            current_results["tool_results"] = current_tool_results
+                            current_results["formatted_findings"] = all_findings
+                            current_results = update_tool_call(
+                                current_results,
+                                tool_name,
+                                status="failed",
+                                completed_at=serialize_utc(completed_at),
+                                duration_seconds=round((completed_at - tool_started_at).total_seconds(), 2),
+                                http_status=response.status_code,
+                                findings_count=0,
+                                error=error
+                            )
+                            session.results_json = current_results
+                            db.commit()
                         
                 except Exception as e:
-                    print(f"Error: {e}")
-                    tool_results[tool_name] = {"error": str(e)}
-                    all_findings.append({
-                        "type": "error", "title": f"{tool_name} error", 
-                        "description": str(e)[:200], "severity": "error", "tool": tool_name
-                    })
+                    print(f"Error running {tool_name}: {e}")
+                    error = str(e)
+                    tool_results[tool_name] = {"error": error}
+                    completed_at = datetime.utcnow()
+                    session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
+                    if session:
+                        current_results = dict(session.results_json or build_initial_results(target, tools, parameters))
+                        current_tool_results = dict(current_results.get("tool_results") or {})
+                        current_tool_results[tool_name] = {"error": error}
+                        current_results["tool_results"] = current_tool_results
+                        current_results["formatted_findings"] = all_findings
+                        current_results = update_tool_call(
+                            current_results,
+                            tool_name,
+                            status="failed",
+                            completed_at=serialize_utc(completed_at),
+                            duration_seconds=round((completed_at - tool_started_at).total_seconds(), 2),
+                            findings_count=0,
+                            error=error
+                        )
+                        session.results_json = current_results
+                        db.commit()
         
         progress_store[session_id] = {"status": "completed"}
         session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
         if session:
             session.status = "completed"
             session.completed_at = datetime.utcnow()
-            session.results_json = {
-                "tool_results": tool_results,
-                "formatted_findings": all_findings,
-                "tools_used": tools,
-                "parameters": parameters or {},
-                "target": target
-            }
+            current_results = dict(session.results_json or build_initial_results(target, tools, parameters))
+            current_tool_results = dict(current_results.get("tool_results") or {})
+            current_tool_results.update(tool_results)
+            current_results["tool_results"] = current_tool_results
+            current_results["formatted_findings"] = all_findings
+            current_results["tools_used"] = tools
+            current_results["parameters"] = parameters
+            current_results["target"] = target
+            session.results_json = current_results
+        
         db.commit()
         print(f"Batch completed: {len(all_findings)} findings")
         
@@ -283,7 +516,9 @@ async def execute_batch_background(tools: list, target: str, session_id: int, us
         session = db.query(PentestSession).filter(PentestSession.id == session_id).first()
         if session:
             session.status = "failed"
-            session.results_json = {"error": str(e)}
+            current_results = dict(session.results_json or build_initial_results(target, tools, parameters))
+            current_results["error"] = str(e)
+            session.results_json = current_results
         db.commit()
     finally:
         db.close()

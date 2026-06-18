@@ -6,10 +6,12 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import Navbar from "./components/Common/Navbar";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import HintAssistant from './components/HintAssistant'
 import { useAuth } from "./hooks/useAuth";
 
 // Lazy load components
 const Dashboard = lazy(() => import("./pages/DashboardPage"));
+const PentestSessionDetailPage = lazy(() => import("./pages/PentestSessionDetailPage"));
 const LabPage = lazy(() => import("./pages/LabPage"));
 const LearnPage = lazy(() => import("./pages/LearnPage"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
@@ -81,65 +83,55 @@ function HomePage() {
 }
 
 function AppContent() {
-	return (
-		<Router>
-			<Navbar />
-			<Suspense
-				fallback={
-					<div
-						style={{
-							display: "flex",
-							justifyContent: "center",
-							alignItems: "center",
-							height: "100vh",
-							background: "#1a1a2e",
-							color: "white",
-						}}
-					>
-						Loading...
-					</div>
-				}
-			>
-				<Routes>
-					<Route path="/" element={<HomePage />} />
-					<Route path="/login" element={<LoginPage />} />
-					<Route path="/register" element={<RegisterPage />} />
-					<Route
-						path="/dashboard"
-						element={
-							<ProtectedRoute>
-								<Dashboard />
-							</ProtectedRoute>
-						}
-					/>
-					<Route
-						path="/lab"
-						element={
-							<ProtectedRoute>
-								<LabPage />
-							</ProtectedRoute>
-						}
-					/>
-					<Route
-						path="/learn"
-						element={
-							<ProtectedRoute>
-								<LearnPage />
-							</ProtectedRoute>
-						}
-					/>
-					<Route
-						path="/profile"
-						element={
-							<ProtectedRoute>
-								<ProfilePage />
-							</ProtectedRoute>
-						}
-					/>
-				</Routes>
-			</Suspense>
-		</Router>
-	);
+  return (
+    <Router>
+      <Navbar />
+      <HintAssistant />
+      <Suspense fallback={
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          background: '#1a1a2e',
+          color: 'white'
+        }}>
+          Loading...
+        </div>
+      }>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/dashboard/sessions/:sessionId" element={
+            <ProtectedRoute>
+              <PentestSessionDetailPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/lab" element={
+            <ProtectedRoute>
+              <LabPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/learn" element={
+            <ProtectedRoute>
+              <LearnPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/profile" element={
+            <ProtectedRoute>
+              <ProfilePage />
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </Suspense>
+    </Router>
+  )
 }
 
 function App() {
